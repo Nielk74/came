@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+## 0.2.0 - 2026-07-24
+
+- Keep hardware flash off by default and switch capture to CameraX's low-latency mode.
+- Replace vertical filter switching with an animated horizontal film carousel and persistent shutter.
+- Apply each film profile's color matrix to the live preview on the GPU.
+- Add tap-to-focus and auto-exposure with an animated focus reticle.
+- Add an in-app photo library with thumbnails, zoom, pan, navigation, metadata, sharing, and deletion.
+
 ## 0.1.1 - 2026-07-24
 
 - Keep the full-screen shutter gesture from intercepting taps on the transient settings gear.

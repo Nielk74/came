@@ -32,8 +32,8 @@ android {
         applicationId = "com.nielk74.came"
         minSdk = 26
         targetSdk = 34
-        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 2
-        versionName = buildParam("VERSION_NAME") ?: "0.1.1"
+        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 3
+        versionName = buildParam("VERSION_NAME") ?: "0.2.0"
         buildConfigField(
             "String",
             "GITHUB_REPO",
@@ -97,6 +97,7 @@ dependencies {
 
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui.tooling.preview)

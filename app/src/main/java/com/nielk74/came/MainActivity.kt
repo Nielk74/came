@@ -28,6 +28,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -37,11 +39,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nielk74.came.camera.CameraCaptureStore
 import com.nielk74.came.camera.CameraSession
 import com.nielk74.came.filters.FilmCatalog
+import com.nielk74.came.gallery.PhotoRepository
 import com.nielk74.came.settings.CameraSettings
 import com.nielk74.came.settings.SettingsRepository
 import com.nielk74.came.ui.CameTheme
 import com.nielk74.came.ui.CameraPermissionScreen
 import com.nielk74.came.ui.CameraScreen
+import com.nielk74.came.ui.GalleryScreen
 import com.nielk74.came.ui.SettingsScreen
 import com.nielk74.came.update.AppRelease
 import com.nielk74.came.update.AppUpdateViewModel
@@ -56,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private val captureStore by lazy { CameraCaptureStore(applicationContext) }
     private val cameraSession by lazy { CameraSession(applicationContext) }
+    private val photoRepository by lazy { PhotoRepository(applicationContext) }
     private var volumeShutterAction: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,11 +83,16 @@ class MainActivity : ComponentActivity() {
                 }
                 var permissionWasRequested by rememberSaveable { mutableStateOf(false) }
                 var settingsOpen by rememberSaveable { mutableStateOf(false) }
+                var galleryOpen by rememberSaveable { mutableStateOf(false) }
+                var galleryInitialUri by remember { mutableStateOf<Uri?>(null) }
+                var galleryRefreshKey by remember { mutableIntStateOf(0) }
+                var latestPhotoUri by remember { mutableStateOf<Uri?>(null) }
                 var countdown by remember { mutableStateOf<Int?>(null) }
                 var isCapturing by remember { mutableStateOf(false) }
                 var captureFeedbackKey by remember { mutableIntStateOf(0) }
                 var statusMessage by remember { mutableStateOf<String?>(null) }
                 var captureJob by remember { mutableStateOf<Job?>(null) }
+                var filterSelectionJob by remember { mutableStateOf<Job?>(null) }
 
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions(),
@@ -103,6 +113,15 @@ class MainActivity : ComponentActivity() {
                     delay(STATUS_VISIBLE_MILLIS)
                     if (statusMessage == shown) statusMessage = null
                 }
+                LaunchedEffect(galleryRefreshKey) {
+                    latestPhotoUri = photoRepository.loadPhotos().firstOrNull()?.uri
+                }
+                var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
+                LaunchedEffect(latestPhotoUri, galleryRefreshKey) {
+                    latestThumbnail = latestPhotoUri?.let { uri ->
+                        photoRepository.loadBitmap(uri, maxDimension = 320)?.asImageBitmap()
+                    }
+                }
 
                 val enabledProfiles = FilmCatalog.profiles.filter { profile ->
                     profile.id in settings.enabledFilterIds
@@ -112,7 +131,10 @@ class MainActivity : ComponentActivity() {
                 } ?: enabledProfiles.first()
 
                 val takePhoto = takePhoto@{
-                    if (captureJob?.isActive == true || settingsOpen || !cameraPermissionGranted) {
+                    if (
+                        captureJob?.isActive == true || settingsOpen || galleryOpen ||
+                        !cameraPermissionGranted
+                    ) {
                         return@takePhoto
                     }
                     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
@@ -137,11 +159,13 @@ class MainActivity : ComponentActivity() {
                                 countdown = null
                             }
                             captureFeedbackKey++
-                            captureStore.capture(
+                            val savedUri = captureStore.capture(
                                 imageCapture = cameraSession.imageCapture,
                                 profile = profileAtShutter,
                                 grainEnabled = grainAtShutter,
                             )
+                            latestPhotoUri = savedUri
+                            galleryRefreshKey++
                             statusMessage = "Saved to Pictures/camé"
                         } catch (error: Throwable) {
                             statusMessage = error.toCameraMessage()
@@ -157,8 +181,9 @@ class MainActivity : ComponentActivity() {
                     onDispose { volumeShutterAction = null }
                 }
 
-                BackHandler(enabled = settingsOpen) {
+                BackHandler(enabled = settingsOpen || galleryOpen) {
                     settingsOpen = false
+                    galleryOpen = false
                     hideSystemBars()
                 }
 
@@ -169,6 +194,18 @@ class MainActivity : ComponentActivity() {
                         permanentlyDenied = permanentlyDenied,
                         onRequestPermission = {
                             if (permanentlyDenied) openAppSettings() else requestPermissions()
+                        },
+                    )
+                } else if (galleryOpen) {
+                    GalleryScreen(
+                        repository = photoRepository,
+                        refreshKey = galleryRefreshKey,
+                        initialPhotoUri = galleryInitialUri,
+                        onLibraryChanged = { galleryRefreshKey++ },
+                        onClose = {
+                            galleryOpen = false
+                            galleryInitialUri = null
+                            hideSystemBars()
                         },
                     )
                 } else if (settingsOpen) {
@@ -189,6 +226,11 @@ class MainActivity : ComponentActivity() {
                         onTimerChanged = { seconds ->
                             scope.launch { settingsRepository.setTimerSeconds(seconds) }
                         },
+                        onOpenGallery = {
+                            settingsOpen = false
+                            galleryInitialUri = null
+                            galleryOpen = true
+                        },
                         onCheckForUpdates = {
                             if (appUpdateStatus is UpdateStatus.Available) {
                                 updateViewModel.downloadAndInstall()
@@ -204,24 +246,29 @@ class MainActivity : ComponentActivity() {
                 } else {
                     CameraScreen(
                         cameraSession = cameraSession,
-                        selectedFilterName = selectedProfile.displayName,
-                        previewColorMatrix = selectedProfile.previewColorMatrix,
-                        previewTintTop = selectedProfile.swatchTop,
-                        previewTintBottom = selectedProfile.swatchBottom,
+                        profiles = enabledProfiles,
+                        selectedProfileId = selectedProfile.id,
                         countdownSeconds = countdown,
                         isCapturing = isCapturing,
                         captureFeedbackKey = captureFeedbackKey,
                         statusMessage = statusMessage,
-                        onFilterStep = { step ->
-                            val current = enabledProfiles.indexOfFirst {
-                                it.id == selectedProfile.id
-                            }.coerceAtLeast(0)
-                            val next = Math.floorMod(current + step, enabledProfiles.size)
-                            scope.launch {
-                                settingsRepository.selectFilter(enabledProfiles[next].id)
+                        latestThumbnail = latestThumbnail,
+                        onFilterSelected = { filterId ->
+                            val precedingSelection = filterSelectionJob
+                            filterSelectionJob = scope.launch {
+                                // Preserve carousel order so an older DataStore write can never
+                                // land after the film card the user ultimately settled on.
+                                precedingSelection?.join()
+                                settingsRepository.selectFilter(filterId)
                             }
                         },
                         onCapture = takePhoto,
+                        onOpenGallery = {
+                            if (!isCapturing) {
+                                galleryInitialUri = latestPhotoUri
+                                galleryOpen = true
+                            }
+                        },
                         onOpenSettings = {
                             if (!isCapturing) settingsOpen = true
                         },
@@ -232,6 +279,7 @@ class MainActivity : ComponentActivity() {
                 if (
                     cameraPermissionGranted &&
                     !settingsOpen &&
+                    !galleryOpen &&
                     availableUpdate != null &&
                     downloadState !is DownloadState.ReadyToInstall
                 ) {

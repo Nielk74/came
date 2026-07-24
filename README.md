@@ -1,32 +1,38 @@
 # camé
 
-An intentionally quiet Android camera. The viewfinder is the interface.
+An intentionally focused Android camera. The viewfinder is the interface.
 
-When camé opens, there is no toolbar, mode dial, or shutter button over the image. Tap the
-viewfinder to take a photograph. Swipe vertically to move through film looks; the current stock
-and a rotating settings gear appear briefly, then get out of the way again.
+camé opens directly into a full-screen, GPU-filtered CameraX preview. A tactile shutter sits below
+an animated horizontal film carousel, with the latest photograph and camera menu kept one tap
+away. Hardware flash is off by default.
 
 <p align="center">
-  <img src="docs/screenshots/viewfinder.png" width="300" alt="camé control-free viewfinder" />
+  <img src="docs/screenshots/viewfinder.png" width="240" alt="camé camera viewfinder" />
   &nbsp;&nbsp;
-  <img src="docs/screenshots/menu.png" width="300" alt="camé full-screen camera menu" />
+  <img src="docs/screenshots/menu.png" width="240" alt="camé full-screen camera menu" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/library.png" width="240" alt="camé in-app photo library" />
 </p>
 
 ## Interaction
 
-- **Tap anywhere** — take a photograph, immediately or after the configured delay.
-- **Swipe up / down** — move through enabled film looks.
-- **Tap the transient gear** — open the full-screen camera menu.
+- **Tap the image** — set autofocus and auto-exposure at that point.
+- **Swipe the film carousel** — preview and select an enabled film look.
+- **Tap the shutter** — take a photograph, immediately or after the configured delay.
+- **Tap the thumbnail** — open the in-app photo library and full-screen viewer.
+- **Tap the gear** — open the full-screen camera menu.
 - **Volume key** — take a photograph without touching the screen.
 
 The menu uses a high-contrast, Fujifilm-inspired information hierarchy. It controls film grain,
-which looks are in the swipe rotation, the self-timer, and app updates.
+which looks are in the carousel, the self-timer, app updates, and access to the photo library.
+The viewer supports pinch/pan and button zoom up to 8×, previous/next navigation, reset, metadata,
+sharing, and deletion.
 
 ## Film looks
 
 The profiles are adapted from the scene-aware film work in
 [`Nielk74/ricoh-gr3-android`](https://github.com/Nielk74/ricoh-gr3-android). camé keeps their stock
-identity while using a lightweight preview transform for immediate feedback and a deterministic
+identity while using a native GPU preview transform for immediate feedback and a deterministic
 full-resolution renderer for the saved photograph. Grain varies with tone, not neighbouring
 detail, so focus and subject texture do not change its physical character.
 

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -61,6 +62,7 @@ fun SettingsScreen(
     onGrainChanged: (Boolean) -> Unit,
     onFilterEnabledChanged: (String, Boolean) -> Unit,
     onTimerChanged: (Int) -> Unit,
+    onOpenGallery: () -> Unit,
     onCheckForUpdates: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -74,6 +76,8 @@ fun SettingsScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 36.dp),
             ) {
+                SectionLabel("MEDIA")
+                LibraryRow(onClick = onOpenGallery)
                 SectionLabel("IMAGE")
                 ToggleRow(
                     title = "FILM GRAIN",
@@ -107,6 +111,32 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LibraryRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(PanelBlack)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.PhotoLibrary,
+            contentDescription = null,
+            tint = FujiRed,
+            modifier = Modifier.size(23.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        LabelBlock(
+            title = "PHOTO LIBRARY",
+            subtitle = "View, zoom, share and manage photographs",
+            modifier = Modifier.weight(1f),
+        )
+        Text(text = "›", color = Muted, fontSize = 28.sp, fontWeight = FontWeight.Light)
     }
 }
 

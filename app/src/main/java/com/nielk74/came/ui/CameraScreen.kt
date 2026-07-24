@@ -1,31 +1,45 @@
 package com.nielk74.came.ui
 
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.FlashOff
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -41,181 +55,164 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nielk74.came.camera.CameraSession
+import com.nielk74.came.filters.FilmProfile
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
-import kotlin.math.abs
+import kotlinx.coroutines.flow.distinctUntilChanged
 
-/** Minimal full-bleed camera surface. No chrome is shown until the first vertical swipe. */
+/** A camera-first surface with explicit shutter, focus, film carousel, library, and settings. */
 @Composable
 fun CameraScreen(
     cameraSession: CameraSession,
-    selectedFilterName: String,
-    previewColorMatrix: FloatArray,
-    previewTintTop: Long,
-    previewTintBottom: Long,
+    profiles: List<FilmProfile>,
+    selectedProfileId: String,
     countdownSeconds: Int?,
     isCapturing: Boolean,
     captureFeedbackKey: Int,
     statusMessage: String?,
-    onFilterStep: (Int) -> Unit,
+    latestThumbnail: ImageBitmap?,
+    onFilterSelected: (String) -> Unit,
     onCapture: () -> Unit,
+    onOpenGallery: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var controlsVisible by remember { mutableStateOf(false) }
-    var controlsEpoch by remember { mutableIntStateOf(0) }
-    var flashVisible by remember { mutableStateOf(false) }
-    val dragThreshold = with(LocalDensity.current) { 54.dp.toPx() }
+    val selectedProfile = profiles.firstOrNull { it.id == selectedProfileId } ?: profiles.first()
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    var focusEpoch by remember { mutableIntStateOf(0) }
+    var focusVisible by remember { mutableStateOf(false) }
+    var focusSuccessful by remember { mutableStateOf<Boolean?>(null) }
+    var captureShadeVisible by remember { mutableStateOf(false) }
+    var previewStreaming by remember { mutableStateOf(false) }
 
-    LaunchedEffect(controlsEpoch) {
-        if (controlsEpoch == 0) return@LaunchedEffect
-        delay(CONTROLS_VISIBLE_MILLIS)
-        controlsVisible = false
+    LaunchedEffect(focusEpoch) {
+        if (focusEpoch == 0) return@LaunchedEffect
+        focusVisible = true
+        delay(FOCUS_VISIBLE_MILLIS)
+        focusVisible = false
     }
     LaunchedEffect(captureFeedbackKey) {
         if (captureFeedbackKey == 0) return@LaunchedEffect
-        flashVisible = true
-        delay(CAPTURE_FLASH_MILLIS)
-        flashVisible = false
+        captureShadeVisible = true
+        delay(CAPTURE_FEEDBACK_MILLIS)
+        captureShadeVisible = false
     }
-
-    val rootGestures = Modifier
-        .pointerInput(onCapture, onFilterStep, dragThreshold) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                var verticalDistance = 0f
-                var horizontalDistance = 0f
-                var draggedVertically = false
-                var consumedByControl = down.isConsumed
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (change.isConsumed) consumedByControl = true
-                    val delta = change.positionChange()
-                    verticalDistance += delta.y
-                    horizontalDistance += delta.x
-                    if (
-                        abs(verticalDistance) > viewConfiguration.touchSlop &&
-                        abs(verticalDistance) > abs(horizontalDistance)
-                    ) {
-                        draggedVertically = true
-                        change.consume()
-                    }
-                    if (!change.pressed) break
-                }
-
-                if (draggedVertically && abs(verticalDistance) >= dragThreshold) {
-                    // Moving the finger upward advances through the film roll.
-                    onFilterStep(if (verticalDistance < 0f) 1 else -1)
-                    controlsVisible = true
-                    controlsEpoch++
-                } else if (shouldCaptureViewfinderTap(
-                        consumedByControl = consumedByControl,
-                        verticalDistance = verticalDistance,
-                        horizontalDistance = horizontalDistance,
-                        touchSlop = viewConfiguration.touchSlop,
-                    )
-                ) {
-                    onCapture()
-                }
-            }
-        }
-        .semantics(mergeDescendants = false) {
-            contentDescription = "Camera viewfinder"
-            role = Role.Button
-            onClick(label = "Take photo") {
-                onCapture()
-                true
-            }
-        }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .then(rootGestures),
+            .background(Color.Black),
     ) {
         FilteredPreview(
             cameraSession = cameraSession,
-            colorMatrix = previewColorMatrix,
-            modifier = Modifier.fillMaxSize(),
-        )
-        FilmPreviewTint(
-            top = previewTintTop,
-            bottom = previewTintBottom,
+            colorMatrix = selectedProfile.previewColorMatrix,
+            onFocus = { point ->
+                focusPoint = point
+                focusSuccessful = null
+                focusEpoch++
+                cameraSession.focusAt(point.x, point.y) { successful ->
+                    focusSuccessful = successful
+                }
+            },
+            onStreamState = { previewStreaming = it },
             modifier = Modifier.fillMaxSize(),
         )
 
         AnimatedVisibility(
-            visible = controlsVisible,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = 22.dp, vertical = 30.dp),
-            enter = fadeIn(tween(220)) + slideInVertically(tween(320)) { it / 2 },
-            exit = fadeOut(tween(260)) + slideOutVertically(tween(260)) { it / 3 },
+            visible = !previewStreaming,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center),
         ) {
-            FilterControls(
-                filterName = selectedFilterName,
-                visible = controlsVisible,
-                onOpenSettings = onOpenSettings,
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "STARTING CAMERA",
+                    color = Color.White.copy(alpha = .72f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.4.sp,
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Icon(Icons.Rounded.FlashOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+            Text(
+                text = "FLASH OFF",
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
             )
         }
+
+        FocusReticle(
+            point = focusPoint,
+            visible = focusVisible,
+            successful = focusSuccessful,
+        )
+
+        CameraControls(
+            profiles = profiles,
+            selectedProfileId = selectedProfile.id,
+            latestThumbnail = latestThumbnail,
+            isCapturing = isCapturing,
+            onFilterSelected = onFilterSelected,
+            onCapture = onCapture,
+            onOpenGallery = onOpenGallery,
+            onOpenSettings = onOpenSettings,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
 
         if (countdownSeconds != null) {
             Countdown(number = countdownSeconds, modifier = Modifier.align(Alignment.Center))
         }
 
         AnimatedVisibility(
-            visible = isCapturing && countdownSeconds == null,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 32.dp),
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.46f),
-                shape = CircleShape,
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(10.dp)
-                        .size(20.dp),
-                    color = Color.White,
-                    strokeWidth = 2.dp,
-                )
-            }
-        }
-
-        AnimatedVisibility(
             visible = statusMessage != null,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 28.dp, vertical = 34.dp),
+                .padding(horizontal = 28.dp, vertical = 56.dp),
             enter = fadeIn() + scaleIn(initialScale = 0.96f),
             exit = fadeOut() + scaleOut(targetScale = 0.96f),
         ) {
             Surface(
-                color = Color.Black.copy(alpha = 0.68f),
+                color = Color.Black.copy(alpha = 0.76f),
                 shape = RoundedCornerShape(100),
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             ) {
@@ -228,114 +225,273 @@ fun CameraScreen(
             }
         }
 
-        if (flashVisible) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.White.copy(alpha = 0.8f)),
-            )
+        if (captureShadeVisible) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
         }
     }
 }
-
-internal fun shouldCaptureViewfinderTap(
-    consumedByControl: Boolean,
-    verticalDistance: Float,
-    horizontalDistance: Float,
-    touchSlop: Float,
-): Boolean =
-    !consumedByControl &&
-        abs(verticalDistance) < touchSlop &&
-        abs(horizontalDistance) < touchSlop
 
 @Composable
 private fun FilteredPreview(
     cameraSession: CameraSession,
     colorMatrix: FloatArray,
+    onFocus: (Offset) -> Unit,
+    onStreamState: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Keep CameraX's compatibility path uninterrupted while profile changes update the lightweight
-    // tint above it. The complete matrix, tone response, halation, and grain run on the saved frame.
     require(colorMatrix.size == COLOR_MATRIX_SIZE)
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(cameraSession) {
+    DisposableEffect(cameraSession, lifecycleOwner) {
         onDispose(cameraSession::unbind)
     }
     AndroidView(
         factory = { context ->
             PreviewView(context).apply {
+                // TextureView is required so the GPU color effect is part of the live frame.
                 implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 scaleType = PreviewView.ScaleType.FILL_CENTER
-                post { cameraSession.bind(lifecycleOwner, this) }
+                cameraSession.bind(lifecycleOwner, this, onStreamState)
             }
         },
-        modifier = modifier,
+        update = { cameraSession.setPreviewColorMatrix(colorMatrix) },
+        modifier = modifier
+            .semantics { contentDescription = "Camera viewfinder. Tap to focus." }
+            .pointerInput(cameraSession) {
+                detectTapGestures(onTap = onFocus)
+            },
     )
 }
 
 @Composable
-private fun FilmPreviewTint(top: Long, bottom: Long, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.background(
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color(top).copy(alpha = 0.045f),
-                    Color.Transparent,
-                    Color(bottom).copy(alpha = 0.035f),
-                ),
-            ),
-        ),
-    )
-}
-
-@Composable
-private fun FilterControls(
-    filterName: String,
-    visible: Boolean,
+private fun CameraControls(
+    profiles: List<FilmProfile>,
+    selectedProfileId: String,
+    latestThumbnail: ImageBitmap?,
+    isCapturing: Boolean,
+    onFilterSelected: (String) -> Unit,
+    onCapture: () -> Unit,
+    onOpenGallery: () -> Unit,
     onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val gearRotation = remember { Animatable(82f) }
-    LaunchedEffect(visible) {
-        gearRotation.animateTo(
-            targetValue = if (visible) 0f else 72f,
-            animationSpec = tween(420),
-        )
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Surface(
-            color = Color.Black.copy(alpha = 0.62f),
-            shape = RoundedCornerShape(100),
-        ) {
-            Text(
-                text = filterName,
-                color = Color.White,
-                style = MaterialTheme.typography.labelLarge,
-                letterSpacing = 0.8.sp,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = .72f), Color.Black.copy(alpha = .96f)),
+                ),
             )
-        }
-        Surface(
-            color = Color.Black.copy(alpha = 0.62f),
-            contentColor = Color.White,
-            shape = CircleShape,
+            .padding(top = 42.dp, bottom = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        FilmCarousel(
+            profiles = profiles,
+            selectedProfileId = selectedProfileId,
+            onFilterSelected = onFilterSelected,
+        )
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 30.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            IconButton(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .size(46.dp)
-                    .semantics { role = Role.Button },
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = "Open camera settings",
-                    modifier = Modifier
-                        .size(21.dp)
-                        .rotate(gearRotation.value),
-                )
+            RoundControl(onClick = onOpenGallery, description = "Open photo library") {
+                if (latestThumbnail != null) {
+                    Image(
+                        bitmap = latestThumbnail,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                    )
+                } else {
+                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White)
+                }
             }
+            ShutterButton(enabled = !isCapturing, onClick = onCapture)
+            RoundControl(onClick = onOpenSettings, description = "Open camera settings") {
+                Icon(Icons.Rounded.Settings, contentDescription = null, tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilmCarousel(
+    profiles: List<FilmProfile>,
+    selectedProfileId: String,
+    onFilterSelected: (String) -> Unit,
+) {
+    val selectedIndex = profiles.indexOfFirst { it.id == selectedProfileId }.coerceAtLeast(0)
+    val pagerState = rememberPagerState(initialPage = selectedIndex) { profiles.size }
+
+    LaunchedEffect(selectedProfileId, profiles.size) {
+        if (pagerState.settledPage != selectedIndex) pagerState.animateScrollToPage(selectedIndex)
+    }
+    LaunchedEffect(pagerState, profiles) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page -> profiles.getOrNull(page)?.let { onFilterSelected(it.id) } }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "FILM",
+            color = Color.White.copy(alpha = .64f),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 2.sp,
+        )
+        Spacer(Modifier.height(7.dp))
+        HorizontalPager(
+            state = pagerState,
+            pageSize = PageSize.Fixed(218.dp),
+            contentPadding = PaddingValues(horizontal = 70.dp),
+            pageSpacing = 10.dp,
+            beyondViewportPageCount = 1,
+            modifier = Modifier.fillMaxWidth(),
+        ) { page ->
+            val profile = profiles[page]
+            val offset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                .absoluteValue
+                .coerceIn(0f, 1f)
+            val selected = offset < .5f
+            Surface(
+                onClick = {
+                    if (page == pagerState.currentPage) onFilterSelected(profile.id)
+                },
+                color = Color.Black.copy(alpha = .72f),
+                shape = RoundedCornerShape(9.dp),
+                modifier = Modifier
+                    .height(58.dp)
+                    .graphicsLayer {
+                        alpha = 1f - offset * .46f
+                        scaleX = 1f - offset * .08f
+                        scaleY = 1f - offset * .08f
+                    }
+                    .border(
+                        width = if (selected) 1.dp else .5.dp,
+                        color = if (selected) Color.White.copy(alpha = .8f) else Color.White.copy(alpha = .18f),
+                        shape = RoundedCornerShape(9.dp),
+                    ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(profile.swatchTop), Color(profile.swatchBottom)),
+                                ),
+                            ),
+                    )
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        AnimatedContent(targetState = profile.displayName, label = "film-name") { name ->
+                            Text(
+                                text = name.uppercase(),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = .8.sp,
+                                maxLines = 1,
+                            )
+                        }
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "${page + 1} / ${profiles.size}",
+                            color = Color.White.copy(alpha = .55f),
+                            fontSize = 9.sp,
+                            letterSpacing = .7.sp,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val inset by animateDpAsState(if (pressed) 8.dp else 5.dp, tween(90), label = "shutter-press")
+    Box(
+        modifier = Modifier
+            .size(82.dp)
+            .clip(CircleShape)
+            .border(3.dp, Color.White, CircleShape)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .semantics { contentDescription = "Take photo" }
+            .padding(inset)
+            .clip(CircleShape)
+            .background(if (enabled) Color.White else Color.White.copy(alpha = .35f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!enabled) {
+            CircularProgressIndicator(modifier = Modifier.size(25.dp), color = Color.Black, strokeWidth = 2.dp)
+        }
+    }
+}
+
+@Composable
+private fun RoundControl(
+    onClick: () -> Unit,
+    description: String,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = .66f))
+            .border(1.dp, Color.White.copy(alpha = .34f), CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+        content = content,
+    )
+}
+
+@Composable
+private fun FocusReticle(point: Offset?, visible: Boolean, successful: Boolean?) {
+    val density = LocalDensity.current
+    val sizePx = with(density) { 62.dp.toPx() }
+    val scale by animateFloatAsState(if (visible) 1f else 1.22f, tween(180), label = "focus-scale")
+    AnimatedVisibility(
+        visible = visible && point != null,
+        enter = fadeIn(tween(100)) + scaleIn(initialScale = 1.35f, animationSpec = tween(180)),
+        exit = fadeOut(tween(240)) + scaleOut(targetScale = .86f, animationSpec = tween(240)),
+        modifier = Modifier.offset {
+            val target = point ?: Offset.Zero
+            IntOffset((target.x - sizePx / 2).roundToInt(), (target.y - sizePx / 2).roundToInt())
+        },
+    ) {
+        val color = when (successful) {
+            true -> Color(0xFF73D68A)
+            false -> Color(0xFFFFC14F)
+            null -> Color.White
+        }
+        Box(
+            modifier = Modifier
+                .size(62.dp)
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .border(1.5.dp, color, RoundedCornerShape(5.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(4.dp).background(color, CircleShape))
         }
     }
 }
@@ -347,7 +503,7 @@ private fun Countdown(number: Int, modifier: Modifier = Modifier) {
             liveRegion = LiveRegionMode.Assertive
             contentDescription = "Photo in $number"
         },
-        color = Color.Black.copy(alpha = 0.42f),
+        color = Color.Black.copy(alpha = 0.56f),
         shape = CircleShape,
     ) {
         Text(
@@ -367,9 +523,7 @@ fun CameraPermissionScreen(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFF111111)),
+        modifier = modifier.fillMaxSize().background(Color(0xFF111111)),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -410,5 +564,5 @@ fun CameraPermissionScreen(
 }
 
 private const val COLOR_MATRIX_SIZE = 20
-private const val CONTROLS_VISIBLE_MILLIS = 2_600L
-private const val CAPTURE_FLASH_MILLIS = 95L
+private const val FOCUS_VISIBLE_MILLIS = 1_050L
+private const val CAPTURE_FEEDBACK_MILLIS = 72L
