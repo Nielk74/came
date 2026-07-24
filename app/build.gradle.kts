@@ -32,8 +32,8 @@ android {
         applicationId = "com.nielk74.came"
         minSdk = 26
         targetSdk = 34
-        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 3
-        versionName = buildParam("VERSION_NAME") ?: "0.2.0"
+        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 4
+        versionName = buildParam("VERSION_NAME") ?: "0.3.0"
         buildConfigField(
             "String",
             "GITHUB_REPO",
@@ -104,6 +104,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.extensions)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.exifinterface)

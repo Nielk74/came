@@ -12,6 +12,8 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
+import androidx.camera.extensions.ExtensionMode
+import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
@@ -20,7 +22,7 @@ import androidx.lifecycle.Observer
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
 
-/** Lifecycle and hardware boundary for camé's low-latency CameraX use cases. */
+/** Lifecycle and hardware boundary for camé's quality-first CameraX still pipeline. */
 class CameraSession(context: android.content.Context) {
     private val appContext = context.applicationContext
     private val mainExecutor = ContextCompat.getMainExecutor(appContext)
@@ -34,7 +36,8 @@ class CameraSession(context: android.content.Context) {
     private var requestedMatrix = IDENTITY_MATRIX.copyOf()
 
     val imageCapture: ImageCapture = ImageCapture.Builder()
-        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+        .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+        .setJpegQuality(JPEG_QUALITY)
         .setFlashMode(ImageCapture.FLASH_MODE_OFF)
         .build()
 
@@ -58,26 +61,24 @@ class CameraSession(context: android.content.Context) {
             {
                 if (generation != bindingGeneration) return@addListener
                 val provider = providerFuture.get()
-                val rotation = view.display?.rotation
-                val previewBuilder = Preview.Builder()
-                if (rotation != null) {
-                    previewBuilder.setTargetRotation(rotation)
-                    imageCapture.targetRotation = rotation
-                }
-                val preview = previewBuilder.build().apply {
-                    surfaceProvider = view.surfaceProvider
-                }
                 provider.unbindAll()
-                camera = provider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
-                    imageCapture,
-                ).also { boundCamera ->
-                    // A previous CameraX session or device default must never leave the torch on.
-                    boundCamera.cameraControl.enableTorch(false)
-                    imageCapture.flashMode = ImageCapture.FLASH_MODE_OFF
-                }
+                val extensionsFuture = ExtensionsManager.getInstanceAsync(appContext, provider)
+                extensionsFuture.addListener(
+                    {
+                        if (generation != bindingGeneration) return@addListener
+                        val selected = runCatching {
+                            chooseQualitySelector(extensionsFuture.get())
+                        }.getOrDefault(CameraSelection(CameraSelector.DEFAULT_BACK_CAMERA, false))
+                        bindUseCases(
+                            provider = provider,
+                            lifecycleOwner = lifecycleOwner,
+                            view = view,
+                            selection = selected,
+                            generation = generation,
+                        )
+                    },
+                    mainExecutor,
+                )
             },
             mainExecutor,
         )
@@ -145,6 +146,54 @@ class CameraSession(context: android.content.Context) {
         if (providerFuture.isDone) providerFuture.get().unbindAll()
     }
 
+    private fun chooseQualitySelector(manager: ExtensionsManager): CameraSelection {
+        val base = CameraSelector.DEFAULT_BACK_CAMERA
+        val mode = when {
+            manager.isExtensionAvailable(base, ExtensionMode.AUTO) -> ExtensionMode.AUTO
+            manager.isExtensionAvailable(base, ExtensionMode.HDR) -> ExtensionMode.HDR
+            else -> return CameraSelection(base, false)
+        }
+        return CameraSelection(manager.getExtensionEnabledCameraSelector(base, mode), true)
+    }
+
+    private fun bindUseCases(
+        provider: ProcessCameraProvider,
+        lifecycleOwner: LifecycleOwner,
+        view: PreviewView,
+        selection: CameraSelection,
+        generation: Int,
+    ) {
+        if (generation != bindingGeneration) return
+        val rotation = view.display?.rotation
+        val previewBuilder = Preview.Builder()
+        if (rotation != null) {
+            previewBuilder.setTargetRotation(rotation)
+            imageCapture.targetRotation = rotation
+        }
+        val preview = previewBuilder.build().apply { surfaceProvider = view.surfaceProvider }
+        provider.unbindAll()
+        val bound = runCatching {
+            provider.bindToLifecycle(lifecycleOwner, selection.selector, preview, imageCapture)
+        }.recoverCatching { error ->
+            if (!selection.isExtension) throw error
+            provider.unbindAll()
+            provider.bindToLifecycle(
+                lifecycleOwner,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                preview,
+                imageCapture,
+            )
+        }.getOrNull() ?: run {
+            camera = null
+            return
+        }
+        camera = bound.also { boundCamera ->
+            // A previous CameraX session or device default must never leave the torch on.
+            boundCamera.cameraControl.enableTorch(false)
+            imageCapture.flashMode = ImageCapture.FLASH_MODE_OFF
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun applyMatrix(view: PreviewView, values: FloatArray) {
         applyMatrixWhenReady(view, values, remainingAttempts = 8)
@@ -179,6 +228,7 @@ class CameraSession(context: android.content.Context) {
 
     private companion object {
         const val MATRIX_SIZE = 20
+        const val JPEG_QUALITY = 100
         const val FILTER_ANIMATION_MILLIS = 240L
         const val TEXTURE_RETRY_MILLIS = 24L
         val IDENTITY_MATRIX = floatArrayOf(
@@ -188,4 +238,9 @@ class CameraSession(context: android.content.Context) {
             0f, 0f, 0f, 1f, 0f,
         )
     }
+
+    private data class CameraSelection(
+        val selector: CameraSelector,
+        val isExtension: Boolean,
+    )
 }

@@ -38,6 +38,7 @@ object FilmProcessor {
         val height = input.height
         val pixels = IntArray(width * height)
         input.getPixels(pixels, 0, width, 0, 0, width, height)
+        ScenePreprocessor.apply(pixels, width, height)
         applyPointwise(pixels, profile)
         if (quality == RenderQuality.CAPTURE) {
             if (profile.halation.enabled) applyHalation(pixels, width, height, profile.halation)

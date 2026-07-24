@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-07-25
+
+- Prefer the device vendor's automatic/HDR CameraX extension on supported Pixel phones and fall
+  back safely to the standard back camera.
+- Capture full-quality JPEG input with flash kept off, replacing the previous latency-first mode.
+- Develop flat camera JPEGs before film emulation with guarded auto-levels, stable exposure,
+  restrained contrast, and edge-aware local separation.
+- Bound histogram work and use luminance lookup tables to keep full-resolution processing fast.
+- Add regression coverage for tonal expansion, hue preservation, histogram bounds, edge halos,
+  and exposure stability around mixed-light scenes.
+
 ## 0.2.0 - 2026-07-24
 
 - Keep hardware flash off by default and switch capture to CameraX's low-latency mode.

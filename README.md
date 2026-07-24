@@ -39,6 +39,25 @@ detail, so focus and subject texture do not change its physical character.
 Included at launch: Portra 400, Portra 800, Gold 200, Ektar 100, Superia 400, CineStill 800T,
 Vision3 250D, Vision3 500T, Eterna Cinema, Tri-X 400, and HP5 Plus.
 
+## Pixel capture development
+
+On devices that expose them, camé asks CameraX for the vendor's automatic extension, with HDR as
+a fallback; availability is always checked at runtime. Google lists the Pixel 8 family among
+[CameraX extension-capable devices](https://developer.android.com/media/camera/supported-devices),
+and Android documents the available
+[Auto and HDR extension modes](https://developer.android.com/media/camera/camerax/extensions-api).
+Still capture uses CameraX's quality-first mode and a 100-quality JPEG source.
+
+Before a film stock is applied, the saved photograph passes through a restrained scene-adaptive
+development stage: guarded percentile levels, a stable trimmed-midpoint exposure curve, and
+edge-aware local tonal separation. It is deliberately not presented as a replacement for Pixel
+HDR+: Google's pipeline aligns and merges a
+[burst of RAW frames before tone mapping](https://research.google/pubs/burst-photography-for-high-dynamic-range-and-low-light-imaging-on-mobile-cameras/),
+which cannot be recreated from one processed JPEG. camé keeps its advanced filtered output in
+standard JPEG because Android's
+[Ultra HDR editing guidance](https://developer.android.com/media/grow/ultra-hdr/edit) notes that
+filters can invalidate the existing gain map unless the editor updates it to match.
+
 ## Privacy
 
 camé has no account, ads, analytics, or network upload. Photographs stay in Android's media
