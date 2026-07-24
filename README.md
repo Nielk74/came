@@ -17,6 +17,7 @@ away. Hardware flash is off by default.
 ## Interaction
 
 - **Tap the image** — set autofocus and auto-exposure at that point.
+- **Tap a lens ratio** — switch among the camera views reported by the device.
 - **Swipe the film carousel** — preview and select an enabled film look.
 - **Tap the shutter** — take a photograph, immediately or after the configured delay.
 - **Tap the thumbnail** — open the in-app photo library and full-screen viewer.
@@ -47,6 +48,14 @@ a fallback; availability is always checked at runtime. Google lists the Pixel 8 
 and Android documents the available
 [Auto and HDR extension modes](https://developer.android.com/media/camera/camerax/extensions-api).
 Still capture uses CameraX's quality-first mode and a 100-quality JPEG source.
+
+On multi-camera phones, camé reads CameraX's
+[physical camera information and intrinsic zoom ratios](https://developer.android.com/reference/androidx/camera/core/CameraInfo)
+to suggest currently usable fields of view. Selecting one changes the logical camera's zoom
+ratio, allowing Android's
+[multi-camera pipeline](https://developer.android.com/media/camera/camera2/multi-camera) to choose
+or fuse the appropriate sensor while preserving the live session. A phone exposing only one
+usable lens keeps the selector hidden.
 
 Before a film stock is applied, the saved photograph passes through a restrained scene-adaptive
 development stage: guarded percentile levels, a stable trimmed-midpoint exposure curve, and

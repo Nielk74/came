@@ -8,10 +8,12 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
+import androidx.camera.core.ZoomState
 import androidx.camera.extensions.ExtensionMode
 import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -21,6 +23,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Lifecycle and hardware boundary for camé's quality-first CameraX still pipeline. */
 class CameraSession(context: android.content.Context) {
@@ -34,6 +40,18 @@ class CameraSession(context: android.content.Context) {
     private var matrixAnimator: ValueAnimator? = null
     private var displayedMatrix = IDENTITY_MATRIX.copyOf()
     private var requestedMatrix = IDENTITY_MATRIX.copyOf()
+    private var requestedLensRatio = 1f
+    private var lensSwitchGeneration = 0
+    private var observedZoomInfo: CameraInfo? = null
+    private var pendingZoomObserver: Observer<ZoomState>? = null
+    private val defaultLens = recommendCameraLenses(emptyList(), 1f, 1f).first()
+    private val _availableLenses = MutableStateFlow(listOf(defaultLens))
+    private val _selectedLens = MutableStateFlow(defaultLens)
+    private val _isLensSwitching = MutableStateFlow(false)
+
+    val availableLenses: StateFlow<List<CameraLens>> = _availableLenses.asStateFlow()
+    val selectedLens: StateFlow<CameraLens> = _selectedLens.asStateFlow()
+    val isLensSwitching: StateFlow<Boolean> = _isLensSwitching.asStateFlow()
 
     val imageCapture: ImageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
@@ -47,6 +65,8 @@ class CameraSession(context: android.content.Context) {
         onStreamState: (Boolean) -> Unit = {},
     ) {
         val generation = ++bindingGeneration
+        resetLensState()
+        removePendingZoomObserver()
         previewView.get()?.let { previous ->
             streamObserver?.let(previous.previewStreamState::removeObserver)
         }
@@ -135,8 +155,28 @@ class CameraSession(context: android.content.Context) {
         )
     }
 
+    /** Requests a device-reported field of view while leaving physical selection to the HAL. */
+    fun selectLens(lens: CameraLens, onComplete: (Boolean) -> Unit = {}) {
+        val boundCamera = camera
+        val target = _availableLenses.value.firstOrNull {
+            abs(it.zoomRatio - lens.zoomRatio) < LENS_RATIO_EPSILON
+        }
+        if (boundCamera == null || target == null) {
+            onComplete(false)
+            return
+        }
+        if (!_isLensSwitching.value && target == _selectedLens.value) {
+            onComplete(true)
+            return
+        }
+        switchToLens(boundCamera, target, rememberOnSuccess = true, onComplete = onComplete)
+    }
+
     fun unbind() {
         bindingGeneration++
+        lensSwitchGeneration++
+        _isLensSwitching.value = false
+        removePendingZoomObserver()
         matrixAnimator?.cancel()
         matrixAnimator = null
         camera = null
@@ -185,13 +225,145 @@ class CameraSession(context: android.content.Context) {
             )
         }.getOrNull() ?: run {
             camera = null
+            resetLensState()
             return
         }
-        camera = bound.also { boundCamera ->
-            // A previous CameraX session or device default must never leave the torch on.
-            boundCamera.cameraControl.enableTorch(false)
-            imageCapture.flashMode = ImageCapture.FLASH_MODE_OFF
+        camera = bound
+        // A previous CameraX session or device default must never leave the torch on.
+        bound.cameraControl.enableTorch(false)
+        imageCapture.flashMode = ImageCapture.FLASH_MODE_OFF
+        awaitZoomState(provider, lifecycleOwner, bound, generation)
+    }
+
+    private fun awaitZoomState(
+        provider: ProcessCameraProvider,
+        lifecycleOwner: LifecycleOwner,
+        boundCamera: Camera,
+        binding: Int,
+    ) {
+        removePendingZoomObserver()
+        val cameraInfo = boundCamera.cameraInfo
+        lateinit var observer: Observer<ZoomState>
+        observer = Observer { zoomState ->
+            if (
+                binding != bindingGeneration || camera !== boundCamera
+            ) {
+                return@Observer
+            }
+            cameraInfo.zoomState.removeObserver(observer)
+            if (pendingZoomObserver === observer) {
+                pendingZoomObserver = null
+                observedZoomInfo = null
+            }
+            configureLensOptions(provider, boundCamera, zoomState)
         }
+        observedZoomInfo = cameraInfo
+        pendingZoomObserver = observer
+        cameraInfo.zoomState.observe(lifecycleOwner, observer)
+    }
+
+    private fun configureLensOptions(
+        provider: ProcessCameraProvider,
+        boundCamera: Camera,
+        zoomState: ZoomState,
+    ) {
+        val defaultBackInfo = runCatching {
+            CameraSelector.DEFAULT_BACK_CAMERA
+                .filter(provider.availableCameraInfos)
+                .firstOrNull()
+        }.getOrNull()
+        val physicalRatios = defaultBackInfo
+            ?.physicalCameraInfos
+            .orEmpty()
+            .mapNotNull { info ->
+                runCatching { info.intrinsicZoomRatio }
+                    .getOrNull()
+                    ?.takeIf { it.isFinite() && it > 0f }
+            }
+        val lenses = recommendCameraLenses(
+            physicalCameraRatios = physicalRatios,
+            minimumZoomRatio = zoomState.minZoomRatio,
+            maximumZoomRatio = zoomState.maxZoomRatio,
+        )
+        _availableLenses.value = lenses
+
+        val actualRatio = zoomState.zoomRatio
+        _selectedLens.value = closestCameraLens(lenses, actualRatio) ?: lenses.first()
+        val requested = closestCameraLens(lenses, requestedLensRatio) ?: _selectedLens.value
+        if (abs(requested.zoomRatio - actualRatio) >= LENS_RATIO_EPSILON) {
+            switchToLens(boundCamera, requested, rememberOnSuccess = false)
+        } else {
+            requestedLensRatio = requested.zoomRatio
+            _selectedLens.value = requested
+        }
+    }
+
+    private fun switchToLens(
+        boundCamera: Camera,
+        target: CameraLens,
+        rememberOnSuccess: Boolean,
+        onComplete: (Boolean) -> Unit = {},
+    ) {
+        val zoomState = boundCamera.cameraInfo.zoomState.value
+        if (zoomState == null || target.zoomRatio !in zoomState.minZoomRatio..zoomState.maxZoomRatio) {
+            onComplete(false)
+            return
+        }
+        val generation = ++lensSwitchGeneration
+        _isLensSwitching.value = true
+        val result = runCatching {
+            boundCamera.cameraControl.setZoomRatio(target.zoomRatio)
+        }.getOrElse {
+            _isLensSwitching.value = false
+            onComplete(false)
+            return
+        }
+        result.addListener(
+            {
+                if (generation != lensSwitchGeneration || camera !== boundCamera) {
+                    return@addListener
+                }
+                val failure = runCatching { result.get() }.exceptionOrNull()
+                val successful = failure == null
+                if (successful) {
+                    _selectedLens.value = target
+                    if (rememberOnSuccess) requestedLensRatio = target.zoomRatio
+                } else {
+                    val actualRatio = boundCamera.cameraInfo.zoomState.value?.zoomRatio
+                        ?: _selectedLens.value.zoomRatio
+                    val remaining = if (shouldRemoveLensAfter(failure)) {
+                        _availableLenses.value.filterNot {
+                            it != defaultLens &&
+                                abs(it.zoomRatio - target.zoomRatio) < LENS_RATIO_EPSILON
+                        }.ifEmpty { listOf(defaultLens) }
+                    } else {
+                        _availableLenses.value
+                    }
+                    _availableLenses.value = remaining
+                    _selectedLens.value = closestCameraLens(remaining, actualRatio)
+                        ?: closestCameraLens(remaining, 1f)
+                        ?: remaining.first()
+                }
+                _isLensSwitching.value = false
+                onComplete(successful)
+            },
+            mainExecutor,
+        )
+    }
+
+    private fun removePendingZoomObserver() {
+        val info = observedZoomInfo
+        val observer = pendingZoomObserver
+        if (info != null && observer != null) info.zoomState.removeObserver(observer)
+        observedZoomInfo = null
+        pendingZoomObserver = null
+    }
+
+    private fun resetLensState() {
+        lensSwitchGeneration++
+        _isLensSwitching.value = false
+        _availableLenses.value = listOf(defaultLens)
+        _selectedLens.value = defaultLens
     }
 
     @Suppress("DEPRECATION")
@@ -229,6 +401,7 @@ class CameraSession(context: android.content.Context) {
     private companion object {
         const val MATRIX_SIZE = 20
         const val JPEG_QUALITY = 100
+        const val LENS_RATIO_EPSILON = .01f
         const val FILTER_ANIMATION_MILLIS = 240L
         const val TEXTURE_RETRY_MILLIS = 24L
         val IDENTITY_MATRIX = floatArrayOf(

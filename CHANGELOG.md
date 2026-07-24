@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-07-25
+
+- Discover the rear logical camera's physical camera ratios at runtime instead of assuming a model
+  or a fixed 0.5×/1×/telephoto configuration.
+- Add an animated, accessible lens capsule that is hidden automatically on single-lens devices.
+- Switch field of view through the bound logical camera so OEM sensor fusion and Auto/HDR
+  extensions remain active without a preview rebind.
+- Filter suggestions against the active camera's real zoom range, deduplicate approximate device
+  metadata, and avoid presenting digital maximum zoom as an optical lens.
+- Block shutter input during a lens transition and retain the prior selection if CameraX rejects
+  the requested ratio.
+
 ## 0.3.0 - 2026-07-25
 
 - Prefer the device vendor's automatic/HDR CameraX extension on supported Pixel phones and fall

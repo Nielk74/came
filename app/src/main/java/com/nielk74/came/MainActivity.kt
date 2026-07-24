@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity() {
                 val takePhoto = takePhoto@{
                     if (
                         captureJob?.isActive == true || settingsOpen || galleryOpen ||
-                        !cameraPermissionGranted
+                        !cameraPermissionGranted || cameraSession.isLensSwitching.value
                     ) {
                         return@takePhoto
                     }

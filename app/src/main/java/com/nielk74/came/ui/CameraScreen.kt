@@ -3,6 +3,7 @@ package com.nielk74.came.ui
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -14,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -27,15 +29,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.FlashOff
@@ -70,9 +77,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.focused
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -80,6 +92,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nielk74.came.camera.CameraLens
 import com.nielk74.came.camera.CameraSession
 import com.nielk74.came.filters.FilmProfile
 import kotlin.math.absoluteValue
@@ -111,6 +125,10 @@ fun CameraScreen(
     var focusSuccessful by remember { mutableStateOf<Boolean?>(null) }
     var captureShadeVisible by remember { mutableStateOf(false) }
     var previewStreaming by remember { mutableStateOf(false) }
+    var lensStatusMessage by remember { mutableStateOf<String?>(null) }
+    val availableLenses by cameraSession.availableLenses.collectAsStateWithLifecycle()
+    val selectedLens by cameraSession.selectedLens.collectAsStateWithLifecycle()
+    val isLensSwitching by cameraSession.isLensSwitching.collectAsStateWithLifecycle()
 
     LaunchedEffect(focusEpoch) {
         if (focusEpoch == 0) return@LaunchedEffect
@@ -124,6 +142,12 @@ fun CameraScreen(
         delay(CAPTURE_FEEDBACK_MILLIS)
         captureShadeVisible = false
     }
+    LaunchedEffect(lensStatusMessage) {
+        if (lensStatusMessage == null) return@LaunchedEffect
+        delay(LENS_STATUS_VISIBLE_MILLIS)
+        lensStatusMessage = null
+    }
+    val displayedStatus = statusMessage ?: lensStatusMessage
 
     Box(
         modifier = modifier
@@ -192,7 +216,17 @@ fun CameraScreen(
             selectedProfileId = selectedProfile.id,
             latestThumbnail = latestThumbnail,
             isCapturing = isCapturing,
+            lenses = availableLenses,
+            selectedLens = selectedLens,
+            isLensSwitching = isLensSwitching,
             onFilterSelected = onFilterSelected,
+            onLensSelected = { lens ->
+                cameraSession.selectLens(lens) { successful ->
+                    if (!successful) {
+                        lensStatusMessage = "${lens.ratioLabel} camera view unavailable"
+                    }
+                }
+            },
             onCapture = onCapture,
             onOpenGallery = onOpenGallery,
             onOpenSettings = onOpenSettings,
@@ -204,7 +238,7 @@ fun CameraScreen(
         }
 
         AnimatedVisibility(
-            visible = statusMessage != null,
+            visible = displayedStatus != null,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(horizontal = 28.dp, vertical = 56.dp),
@@ -217,7 +251,7 @@ fun CameraScreen(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             ) {
                 Text(
-                    text = statusMessage.orEmpty(),
+                    text = displayedStatus.orEmpty(),
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
@@ -268,7 +302,11 @@ private fun CameraControls(
     selectedProfileId: String,
     latestThumbnail: ImageBitmap?,
     isCapturing: Boolean,
+    lenses: List<CameraLens>,
+    selectedLens: CameraLens,
+    isLensSwitching: Boolean,
     onFilterSelected: (String) -> Unit,
+    onLensSelected: (CameraLens) -> Unit,
     onCapture: () -> Unit,
     onOpenGallery: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -290,6 +328,22 @@ private fun CameraControls(
             selectedProfileId = selectedProfileId,
             onFilterSelected = onFilterSelected,
         )
+        AnimatedVisibility(
+            visible = lenses.size > 1,
+            enter = fadeIn() + scaleIn(initialScale = .9f),
+            exit = fadeOut() + scaleOut(targetScale = .9f),
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(12.dp))
+                LensSelector(
+                    lenses = lenses,
+                    selectedLens = selectedLens,
+                    enabled = !isCapturing && !isLensSwitching,
+                    switching = isLensSwitching,
+                    onLensSelected = onLensSelected,
+                )
+            }
+        }
         Spacer(Modifier.height(14.dp))
         Row(
             modifier = Modifier
@@ -310,9 +364,99 @@ private fun CameraControls(
                     Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White)
                 }
             }
-            ShutterButton(enabled = !isCapturing, onClick = onCapture)
+            ShutterButton(enabled = !isCapturing && !isLensSwitching, onClick = onCapture)
             RoundControl(onClick = onOpenSettings, description = "Open camera settings") {
                 Icon(Icons.Rounded.Settings, contentDescription = null, tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LensSelector(
+    lenses: List<CameraLens>,
+    selectedLens: CameraLens,
+    enabled: Boolean,
+    switching: Boolean,
+    onLensSelected: (CameraLens) -> Unit,
+) {
+    Surface(
+        color = Color.Black.copy(alpha = .66f),
+        shape = CircleShape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .22f)),
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    ) {
+        Row(
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .horizontalScroll(rememberScrollState())
+                .padding(3.dp)
+                .selectableGroup(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            lenses.forEach { lens ->
+                val selected = lens == selectedLens
+                val background by animateColorAsState(
+                    if (selected) Color(0xFFF4F2EB) else Color.Transparent,
+                    tween(180),
+                    label = "lens-background",
+                )
+                val content by animateColorAsState(
+                    if (selected) Color.Black else Color.White,
+                    tween(180),
+                    label = "lens-content",
+                )
+                val scale by animateFloatAsState(
+                    if (selected) 1f else .94f,
+                    tween(180),
+                    label = "lens-scale",
+                )
+                Column(
+                    modifier = Modifier
+                        .widthIn(min = 64.dp)
+                        .heightIn(min = 48.dp)
+                        .graphicsLayer { scaleX = scale; scaleY = scale }
+                        .clip(CircleShape)
+                        .background(background)
+                        .clearAndSetSemantics {
+                            contentDescription = lens.accessibilityLabel
+                            role = Role.RadioButton
+                            this.selected = selected
+                            focused = false
+                            if (enabled) {
+                                onClick { onLensSelected(lens); true }
+                            } else {
+                                disabled()
+                            }
+                        }
+                        .selectable(
+                            selected = selected,
+                            enabled = enabled,
+                            role = Role.RadioButton,
+                            onClick = { onLensSelected(lens) },
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        text = lens.ratioLabel,
+                        color = content.copy(alpha = if (switching && selected) .62f else 1f),
+                        fontSize = 13.sp,
+                        lineHeight = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = lens.roleLabel,
+                        color = content.copy(alpha = if (selected) .66f else .62f),
+                        fontSize = 8.sp,
+                        lineHeight = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = .45.sp,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
@@ -566,3 +710,4 @@ fun CameraPermissionScreen(
 private const val COLOR_MATRIX_SIZE = 20
 private const val FOCUS_VISIBLE_MILLIS = 1_050L
 private const val CAPTURE_FEEDBACK_MILLIS = 72L
+private const val LENS_STATUS_VISIBLE_MILLIS = 2_000L
