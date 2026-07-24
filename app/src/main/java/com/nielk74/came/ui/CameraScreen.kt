@@ -105,9 +105,11 @@ fun CameraScreen(
                 var verticalDistance = 0f
                 var horizontalDistance = 0f
                 var draggedVertically = false
+                var consumedByControl = down.isConsumed
                 while (true) {
                     val event = awaitPointerEvent()
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (change.isConsumed) consumedByControl = true
                     val delta = change.positionChange()
                     verticalDistance += delta.y
                     horizontalDistance += delta.x
@@ -126,9 +128,12 @@ fun CameraScreen(
                     onFilterStep(if (verticalDistance < 0f) 1 else -1)
                     controlsVisible = true
                     controlsEpoch++
-                } else if (
-                    abs(verticalDistance) < viewConfiguration.touchSlop &&
-                    abs(horizontalDistance) < viewConfiguration.touchSlop
+                } else if (shouldCaptureViewfinderTap(
+                        consumedByControl = consumedByControl,
+                        verticalDistance = verticalDistance,
+                        horizontalDistance = horizontalDistance,
+                        touchSlop = viewConfiguration.touchSlop,
+                    )
                 ) {
                     onCapture()
                 }
@@ -232,6 +237,16 @@ fun CameraScreen(
         }
     }
 }
+
+internal fun shouldCaptureViewfinderTap(
+    consumedByControl: Boolean,
+    verticalDistance: Float,
+    horizontalDistance: Float,
+    touchSlop: Float,
+): Boolean =
+    !consumedByControl &&
+        abs(verticalDistance) < touchSlop &&
+        abs(horizontalDistance) < touchSlop
 
 @Composable
 private fun FilteredPreview(

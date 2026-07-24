@@ -32,8 +32,8 @@ android {
         applicationId = "com.nielk74.came"
         minSdk = 26
         targetSdk = 34
-        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = buildParam("VERSION_NAME") ?: "0.1.0"
+        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 2
+        versionName = buildParam("VERSION_NAME") ?: "0.1.1"
         buildConfigField(
             "String",
             "GITHUB_REPO",
@@ -115,4 +115,3 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
 }
-
