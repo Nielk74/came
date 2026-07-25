@@ -95,6 +95,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nielk74.came.camera.CameraLens
 import com.nielk74.came.camera.CameraSession
+import com.nielk74.came.camera.CaptureStage
 import com.nielk74.came.filters.FilmProfile
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -109,6 +110,7 @@ fun CameraScreen(
     selectedProfileId: String,
     countdownSeconds: Int?,
     isCapturing: Boolean,
+    captureStage: CaptureStage?,
     captureFeedbackKey: Int,
     statusMessage: String?,
     latestThumbnail: ImageBitmap?,
@@ -211,6 +213,15 @@ fun CameraScreen(
             successful = focusSuccessful,
         )
 
+        AnimatedVisibility(
+            visible = captureStage != null && countdownSeconds == null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            CaptureProgress(stage = captureStage, stockName = selectedProfile.displayName)
+        }
+
         CameraControls(
             profiles = profiles,
             selectedProfileId = selectedProfile.id,
@@ -262,6 +273,45 @@ fun CameraScreen(
         if (captureShadeVisible) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
         }
+    }
+}
+
+/**
+ * Names the stage the capture is on.
+ *
+ * Rendering a full-resolution frame through the whole pipeline is not instant, and the app would
+ * rather say what it is doing than cut the work short to feel quicker. The last stage is retained
+ * while the indicator fades out, so it never blanks mid-animation.
+ */
+@Composable
+private fun CaptureProgress(stage: CaptureStage?, stockName: String) {
+    var lastStage by remember { mutableStateOf(stage) }
+    if (stage != null) lastStage = stage
+    val label = when (lastStage) {
+        CaptureStage.EXPOSING -> "EXPOSING"
+        CaptureStage.READING -> "READING THE FRAME"
+        CaptureStage.DEVELOPING -> "DEVELOPING"
+        CaptureStage.SKY -> "RECOVERING SKY"
+        CaptureStage.PRINTING -> "PRINTING ${stockName.uppercase()}"
+        CaptureStage.HALATION -> "HALATION"
+        CaptureStage.GRAIN -> "GRAIN"
+        CaptureStage.SAVING -> "SAVING"
+        null -> ""
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(24.dp),
+            color = Color.White,
+            strokeWidth = 2.dp,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = .82f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+        )
     }
 }
 

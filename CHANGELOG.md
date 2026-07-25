@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.9.0 - 2026-07-25
+
+- Say what the camera is doing while it renders. A full-resolution frame passes through scene
+  development, sky recovery, the stock's own response, halation, and grain, and that takes real
+  time. The viewfinder now names the stage in progress — exposing, reading the frame, developing,
+  recovering sky, printing the selected stock, halation, grain, saving — rather than showing an
+  unexplained pause. Stages that do no work for the selected stock are never announced.
+
 ## 0.8.0 - 2026-07-25
 
 - Frame what you actually get. The viewfinder filled the screen by cropping the sensor frame, so on

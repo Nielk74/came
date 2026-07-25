@@ -20,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nielk74.came.camera.CameraCaptureStore
 import com.nielk74.came.camera.CameraSession
+import com.nielk74.came.camera.CaptureStage
 import com.nielk74.came.filters.FilmCatalog
 import com.nielk74.came.gallery.PhotoRepository
 import com.nielk74.came.settings.CameraSettings
@@ -53,6 +55,7 @@ import com.nielk74.came.update.DownloadState
 import com.nielk74.came.update.UpdateStatus
 import java.util.Locale
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -89,6 +92,10 @@ class MainActivity : ComponentActivity() {
                 var latestPhotoUri by remember { mutableStateOf<Uri?>(null) }
                 var countdown by remember { mutableStateOf<Int?>(null) }
                 var isCapturing by remember { mutableStateOf(false) }
+                // A StateFlow rather than plain state: the render reports its progress from a
+                // background dispatcher, and this is written from there.
+                val captureStageFlow = remember { MutableStateFlow<CaptureStage?>(null) }
+                val captureStage by captureStageFlow.collectAsState()
                 var captureFeedbackKey by remember { mutableIntStateOf(0) }
                 var statusMessage by remember { mutableStateOf<String?>(null) }
                 var captureJob by remember { mutableStateOf<Job?>(null) }
@@ -163,6 +170,7 @@ class MainActivity : ComponentActivity() {
                                 imageCapture = cameraSession.imageCapture,
                                 profile = profileAtShutter,
                                 grainEnabled = grainAtShutter,
+                                onStage = { stage -> captureStageFlow.value = stage },
                             )
                             latestPhotoUri = savedUri
                             galleryRefreshKey++
@@ -172,6 +180,7 @@ class MainActivity : ComponentActivity() {
                         } finally {
                             countdown = null
                             isCapturing = false
+                            captureStageFlow.value = null
                         }
                     }
                 }
@@ -250,6 +259,7 @@ class MainActivity : ComponentActivity() {
                         selectedProfileId = selectedProfile.id,
                         countdownSeconds = countdown,
                         isCapturing = isCapturing,
+                        captureStage = captureStage,
                         captureFeedbackKey = captureFeedbackKey,
                         statusMessage = statusMessage,
                         latestThumbnail = latestThumbnail,

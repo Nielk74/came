@@ -20,6 +20,7 @@ object FilmProcessor {
         grainEnabled: Boolean,
         renderSeed: Long,
         quality: RenderQuality = RenderQuality.CAPTURE,
+        onStage: (RenderStage) -> Unit = {},
     ): Bitmap {
         require(source.width > 0 && source.height > 0)
         val input = if (quality == RenderQuality.PREVIEW &&
@@ -40,7 +41,7 @@ object FilmProcessor {
         val height = input.height
         val pixels = IntArray(width * height)
         input.getPixels(pixels, 0, width, 0, 0, width, height)
-        render(pixels, width, height, profile, grainEnabled, renderSeed, quality)
+        render(pixels, width, height, profile, grainEnabled, renderSeed, quality, onStage)
 
         val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         output.setPixels(pixels, 0, width, 0, 0, width, height)
@@ -61,11 +62,15 @@ object FilmProcessor {
         grainEnabled: Boolean,
         renderSeed: Long,
         quality: RenderQuality = RenderQuality.CAPTURE,
+        onStage: (RenderStage) -> Unit = {},
     ) {
+        onStage(RenderStage.DEVELOP)
         ScenePreprocessor.apply(pixels, width, height)
         // Still part of developing the capture: recover the sky before the stock reads the scene,
         // so the film renders a sky that has its brightness and colour back rather than a pale one.
+        onStage(RenderStage.SKY)
         SkyRecovery.apply(pixels, width, height)
+        onStage(RenderStage.PRINT)
         applyPointwise(pixels, profile)
         // Selective foliage/sky colour is part of the stock's colour response, not a texture
         // layer, so it runs at both qualities and the preview keeps matching the capture.
@@ -76,8 +81,12 @@ object FilmProcessor {
             SelectiveColor.applySky(pixels, width, height, profile.skyTone, profile.strength)
         }
         if (quality == RenderQuality.CAPTURE) {
-            if (profile.halation.enabled) applyHalation(pixels, width, height, profile.halation)
+            if (profile.halation.enabled) {
+                onStage(RenderStage.HALATION)
+                applyHalation(pixels, width, height, profile.halation)
+            }
             if (grainEnabled && profile.grain.enabled) {
+                onStage(RenderStage.GRAIN)
                 ToneDrivenGrain.apply(pixels, width, height, profile.grain, renderSeed)
             }
         }

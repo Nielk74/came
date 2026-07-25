@@ -79,6 +79,11 @@ The viewfinder fits the frame rather than filling the screen, letterboxed on a t
 preview and the capture are pinned to one aspect ratio. What you frame is what gets saved, at full
 field of view and full resolution.
 
+Rendering a full-resolution photograph through the whole pipeline takes a few seconds, and camé
+treats that as the cost of the picture rather than something to trim. While it works, the
+viewfinder names the stage in progress — developing, recovering sky, printing the stock, halation,
+grain, saving — so the wait is accounted for.
+
 Before a film stock is applied, the saved photograph passes through a restrained scene-adaptive
 development stage: guarded percentile levels, a stable trimmed-midpoint exposure curve, and
 edge-aware local tonal separation. It is deliberately light-handed — the tonal character is the

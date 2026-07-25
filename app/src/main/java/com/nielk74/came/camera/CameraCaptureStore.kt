@@ -34,16 +34,24 @@ import kotlinx.coroutines.withContext
  * finished bitmap is then published atomically to Pictures/camé.
  */
 class CameraCaptureStore(private val context: Context) {
+    /**
+     * [onStage] is called as each stage begins, from whichever thread is doing the work, so it
+     * must be safe to invoke off the main thread. Rendering a full-resolution frame is not quick
+     * and is not meant to be; reporting progress is how that time is accounted for.
+     */
     suspend fun capture(
         imageCapture: ImageCapture,
         profile: FilmProfile,
         grainEnabled: Boolean,
+        onStage: (CaptureStage) -> Unit = {},
     ): Uri {
         val sourceFile = createSourceFile()
         try {
+            onStage(CaptureStage.EXPOSING)
             takePicture(imageCapture, sourceFile)
 
             val rendered = withContext(Dispatchers.Default) {
+                onStage(CaptureStage.READING)
                 val source = decodeUpright(sourceFile)
                 try {
                     FilmProcessor.apply(
@@ -52,6 +60,7 @@ class CameraCaptureStore(private val context: Context) {
                         grainEnabled = grainEnabled,
                         renderSeed = sourceFile.lastModified(),
                         quality = RenderQuality.CAPTURE,
+                        onStage = { stage -> onStage(CaptureStage.of(stage)) },
                     ).also { output ->
                         if (output !== source) source.recycle()
                     }
@@ -62,6 +71,7 @@ class CameraCaptureStore(private val context: Context) {
             }
 
             return try {
+                onStage(CaptureStage.SAVING)
                 publish(rendered)
             } finally {
                 rendered.recycle()
