@@ -283,7 +283,10 @@ private fun FilteredPreview(
             PreviewView(context).apply {
                 // TextureView is required so the GPU color effect is part of the live frame.
                 implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                scaleType = PreviewView.ScaleType.FILL_CENTER
+                // Fit, never fill: filling a tall screen with a 4:3 frame crops the sides away, so
+                // the viewfinder showed a tighter picture than the one that got saved. Letterboxing
+                // against the black backdrop keeps what you frame and what you get identical.
+                scaleType = PreviewView.ScaleType.FIT_CENTER
                 cameraSession.bind(lifecycleOwner, this, onStreamState)
             }
         },

@@ -78,7 +78,7 @@ object FilmProcessor {
         if (quality == RenderQuality.CAPTURE) {
             if (profile.halation.enabled) applyHalation(pixels, width, height, profile.halation)
             if (grainEnabled && profile.grain.enabled) {
-                applyGrain(pixels, width, height, profile.grain, renderSeed)
+                ToneDrivenGrain.apply(pixels, width, height, profile.grain, renderSeed)
             }
         }
     }
@@ -151,43 +151,6 @@ object FilmProcessor {
                 (toByte(renderedR) shl 16) or
                 (toByte(renderedG) shl 8) or
                 toByte(renderedB)
-        }
-    }
-
-    private fun applyGrain(
-        pixels: IntArray,
-        width: Int,
-        height: Int,
-        profile: GrainProfile,
-        renderSeed: Long,
-    ) {
-        val longEdge = maxOf(width, height)
-        val field = ToneDrivenGrain.FieldSampler(width, longEdge, profile, renderSeed)
-        val visibility = FloatArray(256) { tone ->
-            ToneDrivenGrain.visibilityForTone(tone / 255f, profile)
-        }
-        for (y in 0 until height) {
-            field.beginRow(y)
-            val row = y * width
-            for (x in 0 until width) {
-                val index = row + x
-                val color = pixels[index]
-                val red = (color ushr 16 and 0xff) / 255f
-                val green = (color ushr 8 and 0xff) / 255f
-                val blue = (color and 0xff) / 255f
-                val tone = luma(red, green, blue)
-                if (tone <= .001f || tone >= .999f) continue
-                val toneVisibility = visibility[(tone * 255f).roundToInt().coerceIn(0, 255)]
-                val crystal = field.sample(x)
-                val shift = crystal * profile.amount * toneVisibility * .34f
-                val endpoint = 4f * tone * (1f - tone)
-                val chroma = shift * profile.chroma * endpoint * .15f
-                val newR = red + shift + chroma
-                val newG = green + shift - chroma * .45f
-                val newB = blue + shift - chroma * .75f
-                pixels[index] = color and -0x1000000 or
-                    (toByte(newR) shl 16) or (toByte(newG) shl 8) or toByte(newB)
-            }
         }
     }
 
@@ -268,9 +231,9 @@ object FilmProcessor {
                 }
 
                 pixels[index] = color and -0x1000000 or
-                    (ColorMath.toByte(ColorMath.linearToSrgb(outR)) shl 16) or
-                    (ColorMath.toByte(ColorMath.linearToSrgb(outG)) shl 8) or
-                    ColorMath.toByte(ColorMath.linearToSrgb(outB))
+                    (ColorMath.toByteFromLinear(outR) shl 16) or
+                    (ColorMath.toByteFromLinear(outG) shl 8) or
+                    ColorMath.toByteFromLinear(outB)
             }
         }
     }

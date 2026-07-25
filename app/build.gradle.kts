@@ -32,8 +32,8 @@ android {
         applicationId = "com.nielk74.came"
         minSdk = 26
         targetSdk = 34
-        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 8
-        versionName = buildParam("VERSION_NAME") ?: "0.7.0"
+        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 9
+        versionName = buildParam("VERSION_NAME") ?: "0.8.0"
         buildConfigField(
             "String",
             "GITHUB_REPO",

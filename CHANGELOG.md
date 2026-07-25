@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## 0.8.0 - 2026-07-25
+
+- Frame what you actually get. The viewfinder filled the screen by cropping the sensor frame, so on
+  a tall phone it showed a much tighter picture than the one that was saved. It now fits the frame
+  instead of filling it, letterboxed against the black backdrop, and the viewfinder and the capture
+  are pinned to one aspect ratio so they cannot drift apart. Saved photographs keep their full field
+  of view and resolution.
+- Rebuild grain on the reference's film-plane model. The tent response is now integrated
+  analytically over each output pixel's footprint on the emulsion instead of the lattice being
+  sampled bilinearly, so a preview holds the area-average of the same field a full-resolution export
+  samples and grain keeps its physical size rather than turning into soft blur at high resolution.
+  Density is perturbed in the log-odds of linear luminance, which is how density actually
+  accumulates, and the result is gamut-compressed toward the new luminance rather than clipped per
+  channel. Clumping is variance-normalised, so it changes the shape of the distribution's tails
+  instead of quietly amplifying the whole field.
+- Step the develop stage back. Its tone curve was tuned when the film profiles were nearly neutral
+  and it was carrying the contrast on their behalf; since the stocks began rendering their own
+  authored response the two compounded and the result read as overcooked. Measured across ten real
+  Pixel 8 frames, the contrast it adds falls from about +19% to +9%.
+- Stop crushing shadows. Anchoring the black point on the 2nd percentile clipped exactly that share
+  of every frame by construction. It now samples nearer the true floor and stops short of it, which
+  takes near-black clipping from 2–3% of the frame to under 1%.
+- Speed up the full-resolution render: a tabulated sRGB encode, per-row lattice resolution, and
+  trimmed kernel taps make the new grain about six times faster than its first implementation.
+
 ## 0.7.0 - 2026-07-25
 
 - Recover a washed-out sky during scene development, before any film stock is applied. A

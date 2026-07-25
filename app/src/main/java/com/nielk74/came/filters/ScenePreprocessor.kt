@@ -96,11 +96,14 @@ internal object ScenePreprocessor {
             index += stride
         }
 
-        val low = percentile(histogram, samples, .02f) / 255f
+        val low = percentile(histogram, samples, LOW_PERCENTILE) / 255f
         val midtone = trimmedMean(histogram, samples, .10f, .90f) / 255f
-        val high = percentile(histogram, samples, .98f) / 255f
+        val high = percentile(histogram, samples, HIGH_PERCENTILE) / 255f
         val hasSceneRange = high - low >= MIN_SCENE_RANGE_FOR_LEVELS
-        val blackPoint = if (hasSceneRange) min(low, MAX_BLACK_POINT) else 0f
+        // Anchoring black on a percentile crushes exactly that share of the frame by construction.
+        // Sampling nearer the true floor and then stopping short of it keeps the darkest tones as
+        // shadow detail rather than as a black clip.
+        val blackPoint = if (hasSceneRange) min(low, MAX_BLACK_POINT) * BLACK_POINT_HEADROOM else 0f
         val whitePoint = (if (hasSceneRange) max(high, MIN_WHITE_POINT) else 1f)
             .coerceAtLeast(blackPoint + MIN_RANGE)
         val normalizedMidtone = normalize(midtone, blackPoint, whitePoint)
@@ -265,6 +268,9 @@ internal object ScenePreprocessor {
     private const val LUMINANCE_LUT_SIZE = 1_024
     private const val LUMINANCE_LUT_LAST = LUMINANCE_LUT_SIZE - 1
     private const val MAX_HISTOGRAM_SAMPLES = 65_536
+    private const val LOW_PERCENTILE = .005f
+    private const val HIGH_PERCENTILE = .995f
+    private const val BLACK_POINT_HEADROOM = .75f
     private const val MAX_BLACK_POINT = .10f
     private const val MIN_WHITE_POINT = .90f
     private const val MIN_RANGE = .40f
@@ -273,12 +279,20 @@ internal object ScenePreprocessor {
     private const val MAX_MIDPOINT = .58f
     private const val MIN_GAMMA = .88f
     private const val MAX_GAMMA = 1.12f
-    private const val MIN_CONTRAST = .08f
-    private const val MAX_CONTRAST = .24f
+    /**
+     * The develop stage sets a stable exposure; the stock supplies the look.
+     *
+     * These were tuned when the film profiles were nearly tonally neutral and the S-curve here was
+     * carrying the contrast on their behalf. Now that each stock renders its own authored response,
+     * that curve compounds with the film's and the result reads as overcooked, so the develop stage
+     * steps back and leaves the tonal character to the emulsion.
+     */
+    private const val MIN_CONTRAST = .05f
+    private const val MAX_CONTRAST = .14f
     private const val LOCAL_LONG_EDGE = 448
     private const val MIN_BLOCK_SIZE = 6
     private const val LOCAL_EPSILON = .035f
-    private const val LOCAL_CONTRAST = .18f
+    private const val LOCAL_CONTRAST = .12f
     private const val MAX_LOCAL_DETAIL = .40f
     private const val CHROMA_PRESERVATION = 1.02f
     private val LOG_LUMINANCE = FloatArray(LUMINANCE_LUT_SIZE) { index ->

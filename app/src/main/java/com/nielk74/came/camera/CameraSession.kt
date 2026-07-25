@@ -14,6 +14,8 @@ import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.ZoomState
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.extensions.ExtensionMode
 import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -57,6 +59,7 @@ class CameraSession(context: android.content.Context) {
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
         .setJpegQuality(JPEG_QUALITY)
         .setFlashMode(ImageCapture.FLASH_MODE_OFF)
+        .setResolutionSelector(frameShape())
         .build()
 
     fun bind(
@@ -205,7 +208,7 @@ class CameraSession(context: android.content.Context) {
     ) {
         if (generation != bindingGeneration) return
         val rotation = view.display?.rotation
-        val previewBuilder = Preview.Builder()
+        val previewBuilder = Preview.Builder().setResolutionSelector(frameShape())
         if (rotation != null) {
             previewBuilder.setTargetRotation(rotation)
             imageCapture.targetRotation = rotation
@@ -367,6 +370,18 @@ class CameraSession(context: android.content.Context) {
     }
 
     @Suppress("DEPRECATION")
+    /**
+     * Pins the viewfinder and the capture to one frame shape.
+     *
+     * Left to their own defaults the two use cases can settle on different aspect ratios, which
+     * would reintroduce the mismatch between what is framed and what is saved even with the
+     * viewfinder fitting rather than filling. 4:3 is the native shape of the sensors in question,
+     * so it keeps the whole frame and the full resolution.
+     */
+    private fun frameShape(): ResolutionSelector = ResolutionSelector.Builder()
+        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+        .build()
+
     private fun applyMatrix(view: PreviewView, values: FloatArray) {
         applyMatrixWhenReady(view, values, remainingAttempts = 8)
     }

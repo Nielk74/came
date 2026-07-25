@@ -35,7 +35,10 @@ The profiles are adapted from the scene-aware film work in
 [`Nielk74/ricoh-gr3-android`](https://github.com/Nielk74/ricoh-gr3-android). camé keeps their stock
 identity while using a native GPU preview transform for immediate feedback and a deterministic
 full-resolution renderer for the saved photograph. Grain varies with tone, not neighbouring
-detail, so focus and subject texture do not change its physical character.
+detail, so focus and subject texture do not change its physical character. Its random field lives
+in film coordinates rather than output pixels, and the crystal response is integrated analytically
+over each pixel's footprint on the emulsion, so a preview holds the area-average of the same field
+the export samples and grain keeps its physical size at any output resolution.
 
 Two of the stock responses are selective rather than global. Vegetation greens rotate toward
 cyan-green and open sky toward cyan, each at its original linear-light luminance, gated by a soft
@@ -72,9 +75,14 @@ ratio, allowing Android's
 or fuse the appropriate sensor while preserving the live session. A phone exposing only one
 usable lens keeps the selector hidden.
 
+The viewfinder fits the frame rather than filling the screen, letterboxed on a tall phone, and the
+preview and the capture are pinned to one aspect ratio. What you frame is what gets saved, at full
+field of view and full resolution.
+
 Before a film stock is applied, the saved photograph passes through a restrained scene-adaptive
 development stage: guarded percentile levels, a stable trimmed-midpoint exposure curve, and
-edge-aware local tonal separation.
+edge-aware local tonal separation. It is deliberately light-handed — the tonal character is the
+stock's job, so the develop stage sets a dependable exposure and leaves the look to the emulsion.
 
 That stage also recovers a washed-out sky. Exposing for the subject leaves a bright sky running up
 against the top of the range, arriving pale and close to neutral, so camé pulls its brightness back

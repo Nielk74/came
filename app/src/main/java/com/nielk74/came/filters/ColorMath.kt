@@ -47,4 +47,22 @@ internal object ColorMath {
     }
 
     fun toByte(value: Float): Int = (value.coerceIn(0f, 1f) * 255f + .5f).toInt()
+
+    /**
+     * Encodes a linear-light value straight to its 8-bit sRGB level.
+     *
+     * The exact transfer function costs a `pow` per channel, which the full-resolution grain and
+     * halation passes would pay tens of millions of times. Interpolating a table is exact below
+     * the transfer function's linear segment and stays far inside a single 8-bit step above it.
+     */
+    fun toByteFromLinear(value: Float): Int {
+        val clamped = value.coerceIn(0f, 1f) * ENCODE_LAST
+        val lower = clamped.toInt()
+        if (lower >= ENCODE_LAST) return 255
+        val encoded = ENCODE[lower] + (ENCODE[lower + 1] - ENCODE[lower]) * (clamped - lower)
+        return (encoded * 255f + .5f).toInt()
+    }
+
+    private const val ENCODE_LAST = 8_192
+    private val ENCODE = FloatArray(ENCODE_LAST + 1) { linearToSrgb(it.toFloat() / ENCODE_LAST) }
 }
