@@ -35,6 +35,21 @@ class FilmCatalogTest {
     }
 
     @Test
+    fun selectiveFoliageAndSkyColourStayScopedToTheStocksThatAuthorIt() {
+        val withSelectiveColour = FilmCatalog.profiles
+            .filter { it.foliageTone.enabled || it.skyTone.enabled }
+            .map { it.id }
+        assertEquals(listOf("portra400", "portra800"), withSelectiveColour)
+
+        FilmCatalog.profiles.forEach { profile ->
+            assertTrue(profile.displayName, profile.foliageTone.cyanShift in 0f..1f)
+            assertTrue(profile.displayName, profile.skyTone.cyanShift in 0f..0.45f)
+            assertTrue(profile.displayName, profile.foliageTone.saturationBoost in 0f..0.5f)
+            assertTrue(profile.displayName, profile.skyTone.saturationBoost in 0f..0.5f)
+        }
+    }
+
+    @Test
     fun anEmptyEnabledSetStillReturnsSafeDefault() {
         assertEquals(listOf(FilmCatalog.default), FilmCatalog.enabled(emptySet()))
     }

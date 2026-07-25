@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-07-25
+
+- Add the selective foliage and sky colour response from the reference colour science: eligible
+  vegetation greens rotate toward cyan-green and open sky toward cyan, both at their original
+  linear-light luminance. Gating is deliberately local — a soft hue/chroma/tone likelihood for
+  foliage, plus connectivity to the top frame edge for sky — so skin, blue clothing, signage, and
+  neutrals are left alone rather than dragged along by a global channel rotation. Authored for
+  Portra 400 and Portra 800.
+- Rebuild halation as a two-lobe response in linear light: a broad, red-biased base-reflection
+  lobe plus a tighter emulsion-scatter lobe, screen-composited with the pixel's own unblurred
+  source core subtracted. The highlight core therefore stays clean and the effect reads as a
+  fringe around it instead of a red wash over it, and a receiver term keeps spill off surfaces
+  that are already bright.
+- Scale halation radii with output resolution. Radii are authored against a 1600px long edge, so a
+  full-size capture now shows the intended halo rather than a few-pixel one, and previews match.
+- Replace halation's single box blur with a three-pass Gaussian approximation, removing the square
+  halos the previous blur left around bright edges.
+
 ## 0.4.0 - 2026-07-25
 
 - Discover the rear logical camera's physical camera ratios at runtime instead of assuming a model

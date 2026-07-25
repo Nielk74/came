@@ -17,6 +17,7 @@ object FilmCatalog {
             crossTalk = crossTalk(.025f, .008f), print = print(.92f, .10f, .44f, .02f),
             saturation = .91f, strength = .82f,
             splitTone = split(0f, .006f, .016f, .030f, .017f, 0f, .78f),
+            foliageTone = FoliageTone(.56f, .20f), skyTone = SkyTone(.22f, .20f),
             grain = grain(.060f, 2.15f, .16f, 400L, .35f),
         ),
         profile(
@@ -27,6 +28,7 @@ object FilmCatalog {
             crossTalk = crossTalk(.028f, .010f), print = print(.94f, .11f, .40f, .015f),
             saturation = .94f, strength = .80f,
             splitTone = split(.003f, .006f, .017f, .035f, .018f, 0f, .82f),
+            foliageTone = FoliageTone(.62f, .24f), skyTone = SkyTone(.25f, .24f),
             grain = grain(.092f, 2.55f, .25f, 800L, .42f),
         ),
         profile(
@@ -154,6 +156,8 @@ object FilmCatalog {
         saturation: Float,
         strength: Float,
         splitTone: SplitTone = SplitTone.None,
+        foliageTone: FoliageTone = FoliageTone.None,
+        skyTone: SkyTone = SkyTone.None,
         grain: GrainProfile = GrainProfile.None,
         halation: HalationProfile = HalationProfile.None,
         monochromeWeights: RgbWeights? = null,
@@ -170,6 +174,8 @@ object FilmCatalog {
         saturation = saturation,
         strength = strength,
         splitTone = splitTone,
+        foliageTone = foliageTone,
+        skyTone = skyTone,
         grain = grain,
         halation = halation,
         monochromeWeights = monochromeWeights,

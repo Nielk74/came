@@ -20,6 +20,8 @@ class FilmProfile(
     val saturation: Float,
     val strength: Float,
     val splitTone: SplitTone = SplitTone.None,
+    val foliageTone: FoliageTone = FoliageTone.None,
+    val skyTone: SkyTone = SkyTone.None,
     val grain: GrainProfile = GrainProfile.None,
     val halation: HalationProfile = HalationProfile.None,
     val monochromeWeights: RgbWeights? = null,
@@ -70,6 +72,49 @@ data class SplitTone(
     }
 }
 
+/**
+ * A restrained colour move for vegetation-like yellow-green and green pixels. The soft
+ * hue/chroma/luminance gate leaves skin, neutrals, blue-cyan objects, deep shadows, and pale
+ * highlights alone, and the transform preserves luminance. This is intentionally a local foliage
+ * response rather than a global green-channel or hue rotation.
+ *
+ * @property cyanShift how far eligible greens rotate toward cyan-green (0 = disabled, 1 = reach
+ *   the bounded cyan-green target).
+ * @property saturationBoost extra chroma inside the same mask, gamut-compressed around the
+ *   original luminance.
+ */
+data class FoliageTone(
+    val cyanShift: Float,
+    val saturationBoost: Float = 0f,
+) {
+    val enabled: Boolean get() = cyanShift > 0f || saturationBoost > 0f
+
+    companion object {
+        val None = FoliageTone(0f, 0f)
+    }
+}
+
+/**
+ * A restrained colour move applied only to blue regions connected to the top edge of the frame.
+ * The connectivity gate keeps blue clothes, glasses, signs, and interior objects out of what is
+ * meant to be a sky-specific stock response.
+ *
+ * @property cyanShift how far eligible blue sky moves toward cyan; values around 0.2 are
+ *   deliberately subtle.
+ * @property saturationBoost extra chroma inside the connected-sky mask, applied without changing
+ *   sky luminance.
+ */
+data class SkyTone(
+    val cyanShift: Float,
+    val saturationBoost: Float = 0f,
+) {
+    val enabled: Boolean get() = cyanShift > 0f || saturationBoost > 0f
+
+    companion object {
+        val None = SkyTone(0f, 0f)
+    }
+}
+
 data class GrainProfile(
     val amount: Float,
     val size: Float,
@@ -86,6 +131,14 @@ data class GrainProfile(
     }
 }
 
+/**
+ * Halation: red-orange light scattered through the emulsion and reflected off the film base
+ * around bright edges. [threshold] is the linear-light energy where the smooth source mask begins,
+ * [radius] is the spread authored against a 1600px long edge (the renderer rescales it to the
+ * actual output), [strength] scales the edge spill, and the tint controls its red-dominant
+ * spectral colour. The renderer subtracts the source core before compositing, so this reads as a
+ * fringe surrounding the highlight rather than a red wash over the highlight itself.
+ */
 data class HalationProfile(
     val threshold: Float,
     val radius: Int,

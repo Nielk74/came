@@ -10,7 +10,9 @@ import kotlin.math.roundToInt
 object FilmProcessor {
     /**
      * Returns a new ARGB bitmap and never mutates [source]. PREVIEW bounds the long edge to 1280
-     * pixels and skips spatial layers; CAPTURE preserves dimensions and applies halation/grain.
+     * pixels and skips the texture layers; CAPTURE preserves dimensions and applies halation and
+     * grain. Both qualities render the stock's full colour response, selective foliage/sky
+     * included.
      */
     fun apply(
         source: Bitmap,
@@ -40,6 +42,14 @@ object FilmProcessor {
         input.getPixels(pixels, 0, width, 0, 0, width, height)
         ScenePreprocessor.apply(pixels, width, height)
         applyPointwise(pixels, profile)
+        // Selective foliage/sky colour is part of the stock's colour response, not a texture
+        // layer, so it runs at both qualities and the preview keeps matching the capture.
+        if (profile.foliageTone.enabled) {
+            SelectiveColor.applyFoliage(pixels, profile.foliageTone, profile.strength)
+        }
+        if (profile.skyTone.enabled) {
+            SelectiveColor.applySky(pixels, width, height, profile.skyTone, profile.strength)
+        }
         if (quality == RenderQuality.CAPTURE) {
             if (profile.halation.enabled) applyHalation(pixels, width, height, profile.halation)
             if (grainEnabled && profile.grain.enabled) {
@@ -161,70 +171,195 @@ object FilmProcessor {
         }
     }
 
-    /** A quarter-resolution highlight bloom keeps full-resolution capture memory bounded. */
-    private fun applyHalation(
+    /**
+     * Edge-driven red-orange halation in linear light.
+     *
+     * A broad, predominantly red base-reflection lobe is paired with a tighter emulsion-scatter
+     * lobe. Both source masks come from the same pre-halation pixels, so the broad halo can never
+     * seed the tight one. Each pixel's own unblurred source core is subtracted from the blurred
+     * mask before compositing, which is what makes this a fringe *around* a highlight instead of a
+     * red wash over it, and a receiver term keeps the spill off surfaces that are already bright.
+     *
+     * The masks live at quarter resolution to bound capture memory; halation is a low-frequency
+     * bloom, but the subtracted core and the composite are both full-resolution so highlight edges
+     * stay sharp. [profile] radii are authored against a 1600px long edge and rescaled here, so a
+     * preview and a full-size export show the same halo.
+     */
+    internal fun applyHalation(
         pixels: IntArray,
         width: Int,
         height: Int,
         profile: HalationProfile,
     ) {
+        val dimensionScale = maxOf(width, height) / HALATION_REFERENCE_EDGE
+        val tightRadius = (profile.radius * dimensionScale).roundToInt().coerceIn(1, 48)
+        val broadRadius = (tightRadius * 2.15f).roundToInt().coerceIn(tightRadius + 1, 96)
+
         val scale = 4
         val smallWidth = (width + scale - 1) / scale
         val smallHeight = (height + scale - 1) / scale
-        val highlights = FloatArray(smallWidth * smallHeight)
-        for (smallY in 0 until smallHeight) {
-            for (smallX in 0 until smallWidth) {
-                val color = pixels[minOf(smallY * scale, height - 1) * width +
-                    minOf(smallX * scale, width - 1)]
-                val tone = luma(
-                    (color ushr 16 and 0xff) / 255f,
-                    (color ushr 8 and 0xff) / 255f,
-                    (color and 0xff) / 255f,
-                )
-                highlights[smallY * smallWidth + smallX] =
-                    ((tone - profile.threshold) / (1f - profile.threshold)).coerceIn(0f, 1f)
-            }
-        }
-        val blurred = boxBlur(highlights, smallWidth, smallHeight,
-            (profile.radius / scale).coerceAtLeast(1))
+        val tightMask = halationMask(
+            pixels, width, height, smallWidth, smallHeight, scale, profile, TIGHT_RED_BIAS,
+        )
+        val broadMask = halationMask(
+            pixels, width, height, smallWidth, smallHeight, scale, profile, BROAD_RED_BIAS,
+        )
+        gaussianBlur(tightMask, smallWidth, smallHeight, (tightRadius / scale).coerceAtLeast(1))
+        gaussianBlur(broadMask, smallWidth, smallHeight, (broadRadius / scale).coerceAtLeast(1))
+
         for (y in 0 until height) {
             val smallRow = minOf(y / scale, smallHeight - 1) * smallWidth
             for (x in 0 until width) {
-                val bloom = blurred[smallRow + minOf(x / scale, smallWidth - 1)] *
-                    profile.strength * .10f
-                if (bloom <= 0f) continue
                 val index = y * width + x
                 val color = pixels[index]
+                val red = SRGB_TO_LINEAR[color ushr 16 and 0xff]
+                val green = SRGB_TO_LINEAR[color ushr 8 and 0xff]
+                val blue = SRGB_TO_LINEAR[color and 0xff]
+                val sourceLuma = ColorMath.luminanceOfLinear(red, green, blue)
+                val receiver = (1f - sourceLuma).coerceIn(0f, 1f).toDouble().pow(.65).toFloat()
+                if (receiver <= 0f) continue
+
+                val smallIndex = smallRow + minOf(x / scale, smallWidth - 1)
+                val broadSpill = (broadMask[smallIndex] -
+                    halationCore(sourceLuma, red, profile.threshold, BROAD_RED_BIAS))
+                    .coerceAtLeast(0f)
+                val tightSpill = (tightMask[smallIndex] -
+                    halationCore(sourceLuma, red, profile.threshold, TIGHT_RED_BIAS))
+                    .coerceAtLeast(0f)
+                if (broadSpill <= 0f && tightSpill <= 0f) continue
+
+                // Screen-composite each lobe so a halo adds light without clipping the receiver.
+                var outR = red
+                var outG = green
+                var outB = blue
+                if (broadSpill > 0f) {
+                    val energy = (broadSpill * profile.strength * BROAD_STRENGTH * receiver)
+                        .coerceIn(0f, .72f)
+                    outR = 1f - (1f - outR) * (1f - energy * profile.tintR)
+                    outG = 1f - (1f - outG) * (1f - energy * profile.tintG * .30f)
+                    outB = 1f - (1f - outB) * (1f - energy * profile.tintB * .08f)
+                }
+                if (tightSpill > 0f) {
+                    val energy = (tightSpill * profile.strength * TIGHT_STRENGTH * receiver)
+                        .coerceIn(0f, .72f)
+                    outR = 1f - (1f - outR) * (1f - energy * profile.tintR)
+                    outG = 1f - (1f - outG) * (1f - energy * profile.tintG * .82f)
+                    outB = 1f - (1f - outB) * (1f - energy * profile.tintB * .55f)
+                }
+
                 pixels[index] = color and -0x1000000 or
-                    (toByte((color ushr 16 and 0xff) / 255f + bloom * profile.tintR) shl 16) or
-                    (toByte((color ushr 8 and 0xff) / 255f + bloom * profile.tintG) shl 8) or
-                    toByte((color and 0xff) / 255f + bloom * profile.tintB)
+                    (ColorMath.toByte(ColorMath.linearToSrgb(outR)) shl 16) or
+                    (ColorMath.toByte(ColorMath.linearToSrgb(outG)) shl 8) or
+                    ColorMath.toByte(ColorMath.linearToSrgb(outB))
             }
         }
     }
 
-    private fun boxBlur(input: FloatArray, width: Int, height: Int, radius: Int): FloatArray {
-        val horizontal = FloatArray(input.size)
-        for (y in 0 until height) {
-            var sum = 0f
-            for (x in -radius..radius) sum += input[y * width + x.coerceIn(0, width - 1)]
-            for (x in 0 until width) {
-                horizontal[y * width + x] = sum / (radius * 2 + 1)
-                sum -= input[y * width + (x - radius).coerceIn(0, width - 1)]
-                sum += input[y * width + (x + radius + 1).coerceIn(0, width - 1)]
+    /**
+     * Quarter-resolution source mask. Longer wavelengths penetrate further into the emulsion and
+     * base, so biasing a lobe toward red lets a saturated practical light drive its own halo.
+     */
+    private fun halationMask(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        smallWidth: Int,
+        smallHeight: Int,
+        scale: Int,
+        profile: HalationProfile,
+        redSourceBias: Float,
+    ): FloatArray {
+        val mask = FloatArray(smallWidth * smallHeight)
+        for (smallY in 0 until smallHeight) {
+            // Average the block rather than point-sampling it: a specular highlight smaller than
+            // the decimation stride would otherwise flicker in and out of its own halo.
+            val yStart = smallY * scale
+            val yEnd = minOf(yStart + scale, height)
+            for (smallX in 0 until smallWidth) {
+                val xStart = smallX * scale
+                val xEnd = minOf(xStart + scale, width)
+                var sum = 0f
+                var count = 0
+                for (y in yStart until yEnd) {
+                    val row = y * width
+                    for (x in xStart until xEnd) {
+                        val color = pixels[row + x]
+                        val red = SRGB_TO_LINEAR[color ushr 16 and 0xff]
+                        val luminance = ColorMath.luminanceOfLinear(
+                            red,
+                            SRGB_TO_LINEAR[color ushr 8 and 0xff],
+                            SRGB_TO_LINEAR[color and 0xff],
+                        )
+                        sum += halationCore(luminance, red, profile.threshold, redSourceBias)
+                        count++
+                    }
+                }
+                mask[smallY * smallWidth + smallX] = if (count > 0) sum / count else 0f
             }
         }
-        val output = FloatArray(input.size)
+        return mask
+    }
+
+    private fun halationCore(
+        linearLuma: Float,
+        linearRed: Float,
+        threshold: Float,
+        redSourceBias: Float,
+    ): Float {
+        val source = linearLuma + (linearRed - linearLuma) * redSourceBias
+        return ColorMath.smoothstep(threshold, 1f, source)
+    }
+
+    /**
+     * Separable box-approximated Gaussian of a single-channel [plane], in place. Three box passes
+     * are the standard fast approximation; one pass alone left visible square halos.
+     */
+    private fun gaussianBlur(plane: FloatArray, width: Int, height: Int, radius: Int) {
+        if (radius <= 0) return
+        val scratch = FloatArray(plane.size)
+        repeat(3) {
+            boxBlurHorizontal(plane, scratch, width, height, radius)
+            boxBlurVertical(scratch, plane, width, height, radius)
+        }
+    }
+
+    private fun boxBlurHorizontal(
+        source: FloatArray,
+        out: FloatArray,
+        width: Int,
+        height: Int,
+        radius: Int,
+    ) {
+        val norm = 1f / (2 * radius + 1)
+        for (y in 0 until height) {
+            val row = y * width
+            var sum = 0f
+            for (k in -radius..radius) sum += source[row + k.coerceIn(0, width - 1)]
+            for (x in 0 until width) {
+                out[row + x] = sum * norm
+                sum += source[row + (x + radius + 1).coerceIn(0, width - 1)] -
+                    source[row + (x - radius).coerceIn(0, width - 1)]
+            }
+        }
+    }
+
+    private fun boxBlurVertical(
+        source: FloatArray,
+        out: FloatArray,
+        width: Int,
+        height: Int,
+        radius: Int,
+    ) {
+        val norm = 1f / (2 * radius + 1)
         for (x in 0 until width) {
             var sum = 0f
-            for (y in -radius..radius) sum += horizontal[y.coerceIn(0, height - 1) * width + x]
+            for (k in -radius..radius) sum += source[k.coerceIn(0, height - 1) * width + x]
             for (y in 0 until height) {
-                output[y * width + x] = sum / (radius * 2 + 1)
-                sum -= horizontal[(y - radius).coerceIn(0, height - 1) * width + x]
-                sum += horizontal[(y + radius + 1).coerceIn(0, height - 1) * width + x]
+                out[y * width + x] = sum * norm
+                sum += source[(y + radius + 1).coerceIn(0, height - 1) * width + x] -
+                    source[(y - radius).coerceIn(0, height - 1) * width + x]
             }
         }
-        return output
     }
 
     private class Tables(profile: FilmProfile) {
@@ -268,23 +403,22 @@ object FilmProcessor {
     private fun logit(value: Float): Float = ln(value / (1f - value))
     private fun logistic(value: Float): Float = (1f / (1f + exp(-value))).coerceIn(0f, 1f)
     private fun luma(red: Float, green: Float, blue: Float): Float =
-        .2126f * red + .7152f * green + .0722f * blue
+        ColorMath.luma(red, green, blue)
 
     private fun toByte(value: Float): Int = (value.coerceIn(0f, 1f) * 255f).roundToInt()
 
-    private fun linearToSrgb(value: Float): Float = when {
-        value <= 0f -> 0f
-        value <= .0031308f -> 12.92f * value
-        else -> 1.055f * value.toDouble().pow(1.0 / 2.4).toFloat() - .055f
-    }
+    private fun linearToSrgb(value: Float): Float = ColorMath.linearToSrgb(value)
 
-    private val SRGB_TO_LINEAR = FloatArray(256) { index ->
-        val value = index / 255f
-        if (value <= .04045f) value / 12.92f
-        else ((value + .055f) / 1.055f).toDouble().pow(2.4).toFloat()
-    }
+    private val SRGB_TO_LINEAR = ColorMath.SRGB_TO_LINEAR
 
     private const val EPSILON = .000001f
     private const val TABLE_SIZE = 4096
     private const val PREVIEW_LONG_EDGE = 1280
+
+    /** Halation radii are authored against this long edge and rescaled to the actual output. */
+    private const val HALATION_REFERENCE_EDGE = 1600f
+    private const val TIGHT_RED_BIAS = .24f
+    private const val BROAD_RED_BIAS = .58f
+    private const val TIGHT_STRENGTH = .78f
+    private const val BROAD_STRENGTH = .24f
 }

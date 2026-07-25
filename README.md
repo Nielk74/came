@@ -37,6 +37,15 @@ identity while using a native GPU preview transform for immediate feedback and a
 full-resolution renderer for the saved photograph. Grain varies with tone, not neighbouring
 detail, so focus and subject texture do not change its physical character.
 
+Two of the stock responses are selective rather than global. Vegetation greens rotate toward
+cyan-green and open sky toward cyan, each at its original linear-light luminance, gated by a soft
+hue/chroma/tone likelihood and — for sky — connectivity to the top of the frame, so skin, blue
+clothing, and signage keep their own colour. Halation is a two-lobe response computed in linear
+light: a broad red-biased base reflection and a tighter emulsion scatter, composited with each
+pixel's own highlight core subtracted so it reads as a fringe around a bright edge rather than a
+wash over it. Its radius scales with output size, so a preview and a full-resolution capture show
+the same halo.
+
 Included at launch: Portra 400, Portra 800, Gold 200, Ektar 100, Superia 400, CineStill 800T,
 Vision3 250D, Vision3 500T, Eterna Cinema, Tri-X 400, and HP5 Plus.
 
