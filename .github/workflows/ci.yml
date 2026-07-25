@@ -28,6 +28,7 @@ jobs:
           cache: gradle
 
       - name: Set up Android SDK
+        if: runner.environment == 'github-hosted'
         uses: android-actions/setup-android@v4
 
       - name: Make Gradle wrapper executable
