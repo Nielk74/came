@@ -63,6 +63,9 @@ object FilmProcessor {
         quality: RenderQuality = RenderQuality.CAPTURE,
     ) {
         ScenePreprocessor.apply(pixels, width, height)
+        // Still part of developing the capture: recover the sky before the stock reads the scene,
+        // so the film renders a sky that has its brightness and colour back rather than a pale one.
+        SkyRecovery.apply(pixels, width, height)
         applyPointwise(pixels, profile)
         // Selective foliage/sky colour is part of the stock's colour response, not a texture
         // layer, so it runs at both qualities and the preview keeps matching the capture.

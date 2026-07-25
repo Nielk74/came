@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-07-25
+
+- Recover a washed-out sky during scene development, before any film stock is applied. A
+  computational camera exposes for the subject and lets a bright sky run up against the top of the
+  range, so it arrives pale and close to neutral. The new stage pulls the sky's brightness back and
+  takes red down further than blue, returning colour to it rather than just making a grey sky
+  darker. On an overcast test frame the sky fell from 238 to 211 mean level and gained 46% relative
+  saturation.
+- Detect sky from two independent kinds of evidence. A coarse block grid judges brightness,
+  flatness, and coolness and then keeps only regions that flood-fill back to the top edge of the
+  frame, which is what separates sky from any other bright flat surface. Each pixel is then gated
+  on its own brightness and colour, so the correction stops exactly at the skyline instead of
+  leaving a darkened band along whatever borders it.
+- Scale the correction to what the sky actually needs: an already-deep blue sky is left nearly
+  alone while a bright near-neutral one gets the full treatment. Verified against real Pixel 8
+  frames, including negative cases — a blue-lit station interior, a bright plastic tunnel over
+  snow, a sunlit white stone tower, and a warm sunset sky are all left untouched.
+
 ## 0.6.0 - 2026-07-25
 
 - Strengthen every film look for computational-camera input. Measured against six real Pixel 8 and

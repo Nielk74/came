@@ -74,7 +74,17 @@ usable lens keeps the selector hidden.
 
 Before a film stock is applied, the saved photograph passes through a restrained scene-adaptive
 development stage: guarded percentile levels, a stable trimmed-midpoint exposure curve, and
-edge-aware local tonal separation. It is deliberately not presented as a replacement for Pixel
+edge-aware local tonal separation.
+
+That stage also recovers a washed-out sky. Exposing for the subject leaves a bright sky running up
+against the top of the range, arriving pale and close to neutral, so camé pulls its brightness back
+and takes red down further than blue — returning colour rather than only making a grey sky darker.
+Sky is identified by flood-filling bright, flat, cool regions back to the top edge of the frame,
+which distinguishes it from any other bright flat surface, and each pixel is then gated on its own
+brightness and colour so the correction stops at the skyline rather than leaving a darkened band
+beneath it. A sky that is already a deep blue is left nearly alone.
+
+None of this is presented as a replacement for Pixel
 HDR+: Google's pipeline aligns and merges a
 [burst of RAW frames before tone mapping](https://research.google/pubs/burst-photography-for-high-dynamic-range-and-low-light-imaging-on-mobile-cameras/),
 which cannot be recreated from one processed JPEG. camé keeps its advanced filtered output in
