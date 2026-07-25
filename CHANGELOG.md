@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.10.0 - 2026-07-25
+
+- Advertise camé as a camera app. It previously declared only a launcher entry, so nothing in the
+  system could offer it where a still camera was requested and it could not be picked as a camera
+  default anywhere. It now handles `android.media.action.STILL_IMAGE_CAMERA`.
+- The lock-screen variant of that intent is deliberately not handled: it runs over the lock screen
+  and camé carries a photo library that must not be reachable without unlocking. `ACTION_IMAGE_CAPTURE`
+  is also left alone, since that intent is a contract to return the photograph to the calling app,
+  which camé does not implement yet.
+
 ## 0.9.0 - 2026-07-25
 
 - Say what the camera is doing while it renders. A full-resolution frame passes through scene

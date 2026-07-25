@@ -24,6 +24,22 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+                Advertises camé as a camera app, so the system and other apps can offer it wherever
+                a still camera is requested and it can be chosen as the camera default on the
+                devices that expose that choice.
+
+                The secure variant (STILL_IMAGE_CAMERA_SECURE) is deliberately absent: it runs over
+                the lock screen, and camé carries a photo library that must not be reachable
+                without unlocking. ACTION_IMAGE_CAPTURE is absent too, because that intent is a
+                contract to hand the photograph back to the calling app, which camé does not yet
+                implement; claiming it would leave callers with nothing.
+            -->
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <provider
