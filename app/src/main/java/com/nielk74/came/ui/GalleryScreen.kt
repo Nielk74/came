@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -79,11 +82,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
-
-private val GalleryBlack = Color(0xFF070707)
-private val GalleryPanel = Color(0xFF131313)
-private val GalleryMuted = Color(0xFF9A9A9A)
-private val GalleryRed = Color(0xFFE31B23)
 
 @Composable
 fun GalleryScreen(
@@ -117,7 +115,7 @@ fun GalleryScreen(
         if (selectedIndex != null) selectedIndex = null else onClose()
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = GalleryBlack) {
+    Surface(modifier = Modifier.fillMaxSize(), color = CamePalette.Black) {
         val index = selectedIndex
         if (index != null && photos.isNotEmpty()) {
             val safeIndex = index.coerceIn(0, photos.lastIndex)
@@ -144,10 +142,10 @@ fun GalleryScreen(
                     onRefresh = { reloadKey++ },
                     onClose = onClose,
                 )
-                HorizontalDivider(color = Color(0xFF292929))
+                HorizontalDivider(color = CamePalette.Separator)
                 when {
                     loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = GalleryRed, strokeWidth = 2.dp)
+                        CircularProgressIndicator(color = CamePalette.Accent, strokeWidth = 2.dp)
                     }
                     error != null -> LibraryMessage(
                         icon = Icons.Rounded.Refresh,
@@ -177,13 +175,13 @@ private fun LibraryHeader(count: Int, loading: Boolean, onRefresh: () -> Unit, o
         modifier = Modifier.fillMaxWidth().height(76.dp).padding(start = 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(3.dp).height(30.dp).background(GalleryRed))
+        Box(Modifier.width(3.dp).height(30.dp).background(CamePalette.Accent))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text("PHOTO LIBRARY", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
             Text(
                 if (count == 1) "1 PHOTOGRAPH" else "$count PHOTOGRAPHS",
-                color = GalleryMuted,
+                color = CamePalette.Muted,
                 fontSize = 10.sp,
                 letterSpacing = 1.1.sp,
             )
@@ -209,8 +207,8 @@ private fun PhotoGrid(repository: PhotoRepository, photos: List<PhotoItem>, onOp
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(142.dp)
-                    .background(GalleryPanel)
+                    .aspectRatio(1f)
+                    .background(CamePalette.Panel)
                     .clickable { onOpen(photo) },
                 contentAlignment = Alignment.Center,
             ) {
@@ -268,6 +266,20 @@ private fun PhotoViewer(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(photo.uri) {
+                    // Double-tap is the gesture people reach for first: step in to inspect,
+                    // double-tap again to fall back to the full frame.
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (scale > MIN_ZOOM) {
+                                scale = MIN_ZOOM
+                                translation = Offset.Zero
+                            } else {
+                                scale = DOUBLE_TAP_ZOOM
+                            }
+                        },
+                    )
+                }
                 .transformable(transformState)
                 .graphicsLayer {
                     scaleX = scale
@@ -297,7 +309,7 @@ private fun PhotoViewer(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text("${index + 1} / $total", color = GalleryMuted, fontSize = 10.sp)
+                Text("${index + 1} / $total", color = CamePalette.Muted, fontSize = 10.sp)
             }
             IconButton(onClick = {
                 val share = Intent(Intent.ACTION_SEND).apply {
@@ -380,10 +392,10 @@ private fun PhotoViewer(
             ) {
                 Text(photo.name, color = Color.White, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
-                Text(formatFullDate(photo.dateTakenMillis), color = GalleryMuted, fontSize = 12.sp)
-                Text("${photo.width} × ${photo.height} px", color = GalleryMuted, fontSize = 12.sp)
-                Text(formatBytes(photo.sizeBytes), color = GalleryMuted, fontSize = 12.sp)
-                Text("Pinch to zoom • drag to pan • tap 1× to reset", color = GalleryMuted, fontSize = 11.sp)
+                Text(formatFullDate(photo.dateTakenMillis), color = CamePalette.Muted, fontSize = 12.sp)
+                Text("${photo.width} × ${photo.height} px", color = CamePalette.Muted, fontSize = 12.sp)
+                Text(formatBytes(photo.sizeBytes), color = CamePalette.Muted, fontSize = 12.sp)
+                Text("Pinch or double-tap to zoom • drag to pan • tap 1× to reset", color = CamePalette.Muted, fontSize = 11.sp)
             }
         }
 
@@ -394,7 +406,7 @@ private fun PhotoViewer(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 92.dp)
-                    .background(GalleryRed, RoundedCornerShape(6.dp))
+                    .background(CamePalette.Accent, RoundedCornerShape(6.dp))
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
@@ -413,7 +425,7 @@ private fun PhotoViewer(
                             .onSuccess { deleted -> if (deleted) onDeleted() else error = "The photograph could not be deleted" }
                             .onFailure { error = it.message ?: "The photograph could not be deleted" }
                     }
-                }) { Text("DELETE", color = GalleryRed) }
+                }) { Text("DELETE", color = CamePalette.Accent) }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("CANCEL") } },
         )
@@ -440,8 +452,8 @@ private fun RepositoryImage(
             modifier = modifier,
         )
     } else {
-        Box(modifier.background(GalleryPanel), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), color = GalleryMuted, strokeWidth = 1.5.dp)
+        Box(modifier.background(CamePalette.Panel), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), color = CamePalette.Muted, strokeWidth = 1.5.dp)
         }
     }
 }
@@ -460,11 +472,11 @@ private fun LibraryMessage(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = GalleryMuted, modifier = Modifier.size(42.dp))
+        Icon(icon, contentDescription = null, tint = CamePalette.Muted, modifier = Modifier.size(42.dp))
         Spacer(Modifier.height(16.dp))
         Text(title, color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Spacer(Modifier.height(7.dp))
-        Text(body, color = GalleryMuted, fontSize = 13.sp)
+        Text(body, color = CamePalette.Muted, fontSize = 13.sp)
     }
 }
 
@@ -484,3 +496,4 @@ private val SHORT_DATE = DateTimeFormatter.ofPattern("dd MMM", Locale.getDefault
 private val FULL_DATE = DateTimeFormatter.ofPattern("dd MMM yyyy • HH:mm", Locale.getDefault())
 private const val MIN_ZOOM = 1f
 private const val MAX_ZOOM = 8f
+private const val DOUBLE_TAP_ZOOM = 2.5f

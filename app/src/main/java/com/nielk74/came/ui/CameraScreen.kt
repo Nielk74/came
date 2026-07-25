@@ -4,13 +4,19 @@ import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,9 +29,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,8 +42,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
@@ -48,9 +59,9 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.FlashOff
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,20 +72,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -95,22 +109,29 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nielk74.came.camera.CameraLens
 import com.nielk74.came.camera.CameraSession
+import com.nielk74.came.camera.CaptureRun
 import com.nielk74.came.camera.CaptureStage
 import com.nielk74.came.filters.FilmProfile
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 /** A camera-first surface with explicit shutter, focus, film carousel, library, and settings. */
+// statusBarsIgnoringVisibility is the only way to reserve a strip camé deliberately keeps empty of
+// system bars; it is still marked experimental.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CameraScreen(
     cameraSession: CameraSession,
     profiles: List<FilmProfile>,
     selectedProfileId: String,
+    timerSeconds: Int,
     countdownSeconds: Int?,
     isCapturing: Boolean,
     captureStage: CaptureStage?,
+    captureRun: CaptureRun?,
     captureFeedbackKey: Int,
     statusMessage: String?,
     latestThumbnail: ImageBitmap?,
@@ -121,6 +142,7 @@ fun CameraScreen(
     modifier: Modifier = Modifier,
 ) {
     val selectedProfile = profiles.firstOrNull { it.id == selectedProfileId } ?: profiles.first()
+    val haptics = LocalHapticFeedback.current
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
     var focusEpoch by remember { mutableIntStateOf(0) }
     var focusVisible by remember { mutableStateOf(false) }
@@ -160,6 +182,7 @@ fun CameraScreen(
             cameraSession = cameraSession,
             colorMatrix = selectedProfile.previewColorMatrix,
             onFocus = { point ->
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 focusPoint = point
                 focusSuccessful = null
                 focusEpoch++
@@ -193,18 +216,48 @@ fun CameraScreen(
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(horizontal = 18.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                // camé hides the system bars, but they come back transiently on a swipe and the
+                // frame may carry a cutout, so the badges keep clear of that strip either way.
+                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Rounded.FlashOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-            Text(
-                text = "FLASH OFF",
-                color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp,
-            )
+            ViewfinderPill {
+                Icon(
+                    Icons.Rounded.FlashOff,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp),
+                )
+                Text(
+                    text = "FLASH OFF",
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                )
+            }
+            AnimatedVisibility(
+                visible = timerSeconds > 0,
+                enter = fadeIn() + scaleIn(initialScale = .9f),
+                exit = fadeOut() + scaleOut(targetScale = .9f),
+            ) {
+                ViewfinderPill {
+                    Icon(
+                        Icons.Rounded.Timer,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Text(
+                        text = "TIMER ${timerSeconds}S",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                    )
+                }
+            }
         }
 
         FocusReticle(
@@ -212,15 +265,6 @@ fun CameraScreen(
             visible = focusVisible,
             successful = focusSuccessful,
         )
-
-        AnimatedVisibility(
-            visible = captureStage != null && countdownSeconds == null,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center),
-        ) {
-            CaptureProgress(stage = captureStage, stockName = selectedProfile.displayName)
-        }
 
         CameraControls(
             profiles = profiles,
@@ -232,6 +276,7 @@ fun CameraScreen(
             isLensSwitching = isLensSwitching,
             onFilterSelected = onFilterSelected,
             onLensSelected = { lens ->
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 cameraSession.selectLens(lens) { successful ->
                     if (!successful) {
                         lensStatusMessage = "${lens.ratioLabel} camera view unavailable"
@@ -244,6 +289,18 @@ fun CameraScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
+        // Above the controls, so the scrim really does cover the whole viewfinder: the film
+        // carousel is the one control the shutter state does not already disable, and a stock
+        // chosen mid-render would not be the stock in the pipeline.
+        AnimatedVisibility(
+            visible = captureStage != null && countdownSeconds == null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            CaptureProgress(stage = captureStage, run = captureRun)
+        }
+
         if (countdownSeconds != null) {
             Countdown(number = countdownSeconds, modifier = Modifier.align(Alignment.Center))
         }
@@ -252,7 +309,7 @@ fun CameraScreen(
             visible = displayedStatus != null,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 28.dp, vertical = 56.dp),
+                .padding(horizontal = 28.dp, vertical = 60.dp),
             enter = fadeIn() + scaleIn(initialScale = 0.96f),
             exit = fadeOut() + scaleOut(targetScale = 0.96f),
         ) {
@@ -276,42 +333,108 @@ fun CameraScreen(
     }
 }
 
+/** Small translucent badge for persistent viewfinder state (flash, self timer). */
+@Composable
+private fun ViewfinderPill(content: @Composable RowScope.() -> Unit) {
+    Surface(
+        color = Color.Black.copy(alpha = .55f),
+        shape = CircleShape,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = .16f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            content = content,
+        )
+    }
+}
+
 /**
- * Names the stage the capture is on.
+ * Names the stage the capture is on, with the pipeline that capture will run laid out as a trail
+ * of dots.
  *
  * Rendering a full-resolution frame through the whole pipeline is not instant, and the app would
- * rather say what it is doing than cut the work short to feel quicker. The last stage is retained
- * while the indicator fades out, so it never blanks mid-animation.
+ * rather say what it is doing than cut the work short to feel quicker. The stage and the run are
+ * both retained while the indicator fades out, so it never blanks mid-animation. A dim scrim
+ * swallows stray taps while the photograph is being made.
  */
 @Composable
-private fun CaptureProgress(stage: CaptureStage?, stockName: String) {
+private fun CaptureProgress(stage: CaptureStage?, run: CaptureRun?) {
     var lastStage by remember { mutableStateOf(stage) }
     if (stage != null) lastStage = stage
+    var lastRun by remember { mutableStateOf(run) }
+    if (run != null) lastRun = run
+    // The run is set before the first stage is reported and cleared with the last, so this only
+    // holds before the first capture of a session.
+    val reported = lastRun ?: return
     val label = when (lastStage) {
         CaptureStage.EXPOSING -> "EXPOSING"
         CaptureStage.READING -> "READING THE FRAME"
         CaptureStage.DEVELOPING -> "DEVELOPING"
         CaptureStage.SKY -> "RECOVERING SKY"
-        CaptureStage.PRINTING -> "PRINTING ${stockName.uppercase()}"
+        CaptureStage.PRINTING -> "PRINTING ${reported.profile.displayName.uppercase()}"
         CaptureStage.HALATION -> "HALATION"
         CaptureStage.GRAIN -> "GRAIN"
         CaptureStage.SAVING -> "SAVING"
         null -> ""
     }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(24.dp),
-            color = Color.White,
-            strokeWidth = 2.dp,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = label,
-            color = Color.White.copy(alpha = .82f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.4.sp,
-        )
+    val currentIndex = reported.stages.indexOf(lastStage)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = .48f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {},
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            color = CamePalette.Overlay.copy(alpha = .94f),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = .15f)),
+            // Stage names differ in length, so the card would jump width as they change.
+            modifier = Modifier.animateContentSize(),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(reported.profile.swatchTop), Color(reported.profile.swatchBottom)),
+                                ),
+                            ),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = label,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.6.sp,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    reported.stages.forEachIndexed { index, _ ->
+                        val color = when {
+                            index < currentIndex -> Color.White.copy(alpha = .9f)
+                            index == currentIndex -> CamePalette.Accent
+                            else -> Color.White.copy(alpha = .18f)
+                        }
+                        Box(Modifier.size(5.dp).background(color, CircleShape))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -406,15 +529,27 @@ private fun CameraControls(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             RoundControl(onClick = onOpenGallery, description = "Open photo library") {
-                if (latestThumbnail != null) {
-                    Image(
-                        bitmap = latestThumbnail,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                    )
-                } else {
-                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White)
+                AnimatedContent(
+                    targetState = latestThumbnail,
+                    transitionSpec = {
+                        (fadeIn(tween(240)) + scaleIn(initialScale = .8f, animationSpec = tween(240))) togetherWith
+                            fadeOut(tween(120))
+                    },
+                    label = "thumbnail",
+                    modifier = Modifier.fillMaxSize(),
+                ) { bitmap ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            )
+                        } else {
+                            Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White)
+                        }
+                    }
                 }
             }
             ShutterButton(enabled = !isCapturing && !isLensSwitching, onClick = onCapture)
@@ -436,7 +571,7 @@ private fun LensSelector(
     Surface(
         color = Color.Black.copy(alpha = .66f),
         shape = CircleShape,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .22f)),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = .22f)),
         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
     ) {
         Row(
@@ -523,25 +658,30 @@ private fun FilmCarousel(
 ) {
     val selectedIndex = profiles.indexOfFirst { it.id == selectedProfileId }.coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = selectedIndex) { profiles.size }
+    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(selectedProfileId, profiles.size) {
         if (pagerState.settledPage != selectedIndex) pagerState.animateScrollToPage(selectedIndex)
     }
+    val currentSelection by rememberUpdatedState(selectedProfileId)
     LaunchedEffect(pagerState, profiles) {
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
-            .collect { page -> profiles.getOrNull(page)?.let { onFilterSelected(it.id) } }
+            .collect { page ->
+                val profile = profiles.getOrNull(page) ?: return@collect
+                // A settle that only catches the carousel up with the current selection is not a
+                // gesture: the page the pager opens on, and the scroll that follows a selection
+                // restored from storage, must be neither felt nor written back. Without this the
+                // detent fired on every launch and on every return from the menu or the library,
+                // since the camera screen is composed afresh each time.
+                if (profile.id == currentSelection) return@collect
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onFilterSelected(profile.id)
+            }
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = "FILM",
-            color = Color.White.copy(alpha = .64f),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.sp,
-        )
-        Spacer(Modifier.height(7.dp))
         HorizontalPager(
             state = pagerState,
             pageSize = PageSize.Fixed(218.dp),
@@ -557,7 +697,13 @@ private fun FilmCarousel(
             val selected = offset < .5f
             Surface(
                 onClick = {
-                    if (page == pagerState.currentPage) onFilterSelected(profile.id)
+                    // Tapping a neighbouring card glides it into the centre; tapping the centred
+                    // card confirms the stock already under it.
+                    if (page == pagerState.currentPage) {
+                        onFilterSelected(profile.id)
+                    } else {
+                        scope.launch { pagerState.animateScrollToPage(page) }
+                    }
                 },
                 color = Color.Black.copy(alpha = .72f),
                 shape = RoundedCornerShape(9.dp),
@@ -611,11 +757,26 @@ private fun FilmCarousel(
                 }
             }
         }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            profiles.forEachIndexed { index, _ ->
+                val active = index == pagerState.currentPage
+                val width by animateDpAsState(if (active) 13.dp else 4.dp, tween(180), label = "film-dot")
+                Box(
+                    Modifier
+                        .height(4.dp)
+                        .width(width)
+                        .clip(CircleShape)
+                        .background(if (active) Color.White else Color.White.copy(alpha = .28f)),
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val inset by animateDpAsState(if (pressed) 8.dp else 5.dp, tween(90), label = "shutter-press")
@@ -629,7 +790,10 @@ private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
                 role = Role.Button,
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onClick()
+                },
             )
             .semantics { contentDescription = "Take photo" }
             .padding(inset)
@@ -695,6 +859,14 @@ private fun FocusReticle(point: Offset?, visible: Boolean, successful: Boolean?)
 
 @Composable
 private fun Countdown(number: Int, modifier: Modifier = Modifier) {
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(number) {
+        scale.snapTo(1.28f)
+        scale.animateTo(
+            1f,
+            spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        )
+    }
     Surface(
         modifier = modifier.semantics {
             liveRegion = LiveRegionMode.Assertive
@@ -708,7 +880,9 @@ private fun Countdown(number: Int, modifier: Modifier = Modifier) {
             color = Color.White,
             fontSize = 64.sp,
             style = MaterialTheme.typography.displayLarge,
-            modifier = Modifier.padding(horizontal = 30.dp, vertical = 16.dp),
+            modifier = Modifier
+                .padding(horizontal = 30.dp, vertical = 16.dp)
+                .graphicsLayer { scaleX = scale.value; scaleY = scale.value },
         )
     }
 }
@@ -720,7 +894,7 @@ fun CameraPermissionScreen(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier.fillMaxSize().background(Color(0xFF111111)),
+        modifier = modifier.fillMaxSize().background(CamePalette.Panel),
         contentAlignment = Alignment.Center,
     ) {
         Column(

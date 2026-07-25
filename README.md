@@ -18,16 +18,18 @@ away. Hardware flash is off by default.
 
 - **Tap the image** — set autofocus and auto-exposure at that point.
 - **Tap a lens ratio** — switch among the camera views reported by the device.
-- **Swipe the film carousel** — preview and select an enabled film look.
-- **Tap the shutter** — take a photograph, immediately or after the configured delay.
+- **Swipe the film carousel** — preview and select an enabled film look, or tap a neighbouring
+  card to glide it into the centre.
+- **Tap the shutter** — take a photograph, immediately or after the configured delay; an armed
+  self-timer shows beside the flash badge.
 - **Tap the thumbnail** — open the in-app photo library and full-screen viewer.
 - **Tap the gear** — open the full-screen camera menu.
 - **Volume key** — take a photograph without touching the screen.
 
 The menu uses a high-contrast, Fujifilm-inspired information hierarchy. It controls film grain,
 which looks are in the carousel, the self-timer, app updates, and access to the photo library.
-The viewer supports pinch/pan and button zoom up to 8×, previous/next navigation, reset, metadata,
-sharing, and deletion.
+The viewer supports pinch/pan, double-tap, and button zoom up to 8×, previous/next navigation,
+reset, metadata, sharing, and deletion.
 
 ## Film looks
 
@@ -81,8 +83,10 @@ field of view and full resolution.
 
 Rendering a full-resolution photograph through the whole pipeline takes a few seconds, and camé
 treats that as the cost of the picture rather than something to trim. While it works, the
-viewfinder names the stage in progress — developing, recovering sky, printing the stock, halation,
-grain, saving — so the wait is accounted for.
+viewfinder dims and names the stage in progress — developing, recovering sky, printing the stock,
+halation, grain, saving — beside the swatch of the stock in the pipeline, with the run laid out as
+a trail of dots. Only the stages that photograph will actually reach are shown: halation and grain
+depend on the stock and on the grain setting.
 
 Before a film stock is applied, the saved photograph passes through a restrained scene-adaptive
 development stage: guarded percentile levels, a stable trimmed-midpoint exposure curve, and

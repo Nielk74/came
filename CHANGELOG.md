@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## 0.11.0 - 2026-07-25
+
+- Report the capture on a card carrying the stock's own swatch, with the pipeline laid out as a
+  trail of dots. The dots show only the stages that capture will actually run: halation and grain
+  are conditional in the renderer, so a stock that authors no halation, or a photograph taken with
+  grain switched off, is no longer promised a stage it will never reach. `CaptureRunTest` holds the
+  announced list against the stages the renderer really emits, so the two cannot drift apart.
+- Name the stock that is in the pipeline rather than the one the carousel has moved on to. The
+  photograph was always printed with the stock selected at the shutter, but the progress card read
+  from the live selection, so choosing another film mid-render relabelled the work in flight.
+- Dim the whole viewfinder while a photograph is being made, the film carousel included. The
+  shutter, the library and the menu were already inert during a capture; the carousel was not,
+  which is how a selection could change under a render.
+- Show an armed self-timer beside the flash badge, so the viewfinder says a delay is set before the
+  shutter is pressed rather than only while it counts down. Both badges are now pills that keep
+  clear of the status bar strip and of a display cutout, and the countdown pops on each second.
+- Give the film carousel page dots in place of a "FILM" label, glide a neighbouring card into the
+  centre when it is tapped, and mark each detent with a haptic — the shutter, the focus tap and a
+  lens change are felt too. The detent is only felt for a real gesture: it used to fire for the
+  page the carousel simply opened on, which meant a buzz on every launch and on every return from
+  the menu or the library.
+- Pop the latest photograph into the library button as it lands, square off the library's grid
+  cells, and add double-tap to zoom in the full-screen viewer.
+- Print the running version at the foot of the menu, and draw the menu, the library and the
+  overlays over the viewfinder from one shared dark-room palette instead of three near-identical
+  sets of literals.
+
 ## 0.10.0 - 2026-07-25
 
 - Advertise camé as a camera app. It previously declared only a launcher entry, so nothing in the

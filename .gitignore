@@ -8,3 +8,6 @@ local.properties
 *.keystore
 .DS_Store
 captures/
+node_modules/
+package.json
+package-lock.json

@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nielk74.came.camera.CameraCaptureStore
 import com.nielk74.came.camera.CameraSession
+import com.nielk74.came.camera.CaptureRun
 import com.nielk74.came.camera.CaptureStage
 import com.nielk74.came.filters.FilmCatalog
 import com.nielk74.came.gallery.PhotoRepository
@@ -96,6 +97,7 @@ class MainActivity : ComponentActivity() {
                 // background dispatcher, and this is written from there.
                 val captureStageFlow = remember { MutableStateFlow<CaptureStage?>(null) }
                 val captureStage by captureStageFlow.collectAsState()
+                var captureRun by remember { mutableStateOf<CaptureRun?>(null) }
                 var captureFeedbackKey by remember { mutableIntStateOf(0) }
                 var statusMessage by remember { mutableStateOf<String?>(null) }
                 var captureJob by remember { mutableStateOf<Job?>(null) }
@@ -158,6 +160,7 @@ class MainActivity : ComponentActivity() {
                     captureJob = scope.launch {
                         try {
                             isCapturing = true
+                            captureRun = CaptureRun(profileAtShutter, grainAtShutter)
                             if (delayAtShutter > 0) {
                                 for (remaining in delayAtShutter downTo 1) {
                                     countdown = remaining
@@ -181,6 +184,7 @@ class MainActivity : ComponentActivity() {
                             countdown = null
                             isCapturing = false
                             captureStageFlow.value = null
+                            captureRun = null
                         }
                     }
                 }
@@ -257,9 +261,11 @@ class MainActivity : ComponentActivity() {
                         cameraSession = cameraSession,
                         profiles = enabledProfiles,
                         selectedProfileId = selectedProfile.id,
+                        timerSeconds = settings.timerSeconds,
                         countdownSeconds = countdown,
                         isCapturing = isCapturing,
                         captureStage = captureStage,
+                        captureRun = captureRun,
                         captureFeedbackKey = captureFeedbackKey,
                         statusMessage = statusMessage,
                         latestThumbnail = latestThumbnail,

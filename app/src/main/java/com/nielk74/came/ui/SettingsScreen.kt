@@ -26,7 +26,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -41,15 +40,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nielk74.came.BuildConfig
 import com.nielk74.came.filters.FilmCatalog
 import com.nielk74.came.filters.FilmProfile
 import com.nielk74.came.settings.CameraSettings
-
-private val MenuBlack = Color(0xFF070707)
-private val PanelBlack = Color(0xFF111111)
-private val Separator = Color(0xFF2B2B2B)
-private val Muted = Color(0xFF929292)
-private val FujiRed = Color(0xFFE31B23)
 
 /** Full-screen, black camera menu with sparse typography and a Fujifilm-inspired red selection. */
 @Composable
@@ -67,7 +61,7 @@ fun SettingsScreen(
     onClose: () -> Unit,
 ) {
     BackHandler(onBack = onClose)
-    Surface(modifier = Modifier.fillMaxSize(), color = MenuBlack) {
+    Surface(modifier = Modifier.fillMaxSize(), color = CamePalette.Black) {
         Column(modifier = Modifier.fillMaxSize()) {
             MenuHeader(onClose)
             Column(
@@ -85,7 +79,7 @@ fun SettingsScreen(
                     checked = settings.grainEnabled,
                     onCheckedChange = onGrainChanged,
                 )
-                HorizontalDivider(color = Separator, modifier = Modifier.padding(start = 24.dp))
+                HorizontalDivider(color = CamePalette.Separator, modifier = Modifier.padding(start = 24.dp))
                 SectionLabel("FILM PROFILES")
                 profiles.forEachIndexed { index, profile ->
                     val checked = profile.id in settings.enabledFilterIds
@@ -97,7 +91,7 @@ fun SettingsScreen(
                         onCheckedChange = { onFilterEnabledChanged(profile.id, it) },
                     )
                     if (index != profiles.lastIndex) {
-                        HorizontalDivider(color = Separator, modifier = Modifier.padding(start = 76.dp))
+                        HorizontalDivider(color = CamePalette.Separator, modifier = Modifier.padding(start = 76.dp))
                     }
                 }
                 SectionLabel("CAPTURE")
@@ -109,6 +103,7 @@ fun SettingsScreen(
                     checking = isCheckingForUpdates,
                     onClick = onCheckForUpdates,
                 )
+                MenuFooter()
             }
         }
     }
@@ -119,7 +114,7 @@ private fun LibraryRow(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(PanelBlack)
+            .background(CamePalette.Panel)
             .clickable(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -127,7 +122,7 @@ private fun LibraryRow(onClick: () -> Unit) {
         Icon(
             imageVector = Icons.Rounded.PhotoLibrary,
             contentDescription = null,
-            tint = FujiRed,
+            tint = CamePalette.Accent,
             modifier = Modifier.size(23.dp),
         )
         Spacer(Modifier.width(16.dp))
@@ -136,7 +131,7 @@ private fun LibraryRow(onClick: () -> Unit) {
             subtitle = "View, zoom, share and manage photographs",
             modifier = Modifier.weight(1f),
         )
-        Text(text = "›", color = Muted, fontSize = 28.sp, fontWeight = FontWeight.Light)
+        Text(text = "›", color = CamePalette.Muted, fontSize = 28.sp, fontWeight = FontWeight.Light)
     }
 }
 
@@ -150,7 +145,7 @@ private fun MenuHeader(onClose: () -> Unit) {
             .padding(start = 20.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(3.dp).height(28.dp).background(FujiRed))
+        Box(Modifier.width(3.dp).height(28.dp).background(CamePalette.Accent))
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -160,20 +155,20 @@ private fun MenuHeader(onClose: () -> Unit) {
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp,
             )
-            Text(text = "SHOOTING SETTINGS", color = Muted, fontSize = 10.sp, letterSpacing = 1.3.sp)
+            Text(text = "SHOOTING SETTINGS", color = CamePalette.Muted, fontSize = 10.sp, letterSpacing = 1.3.sp)
         }
         IconButton(onClick = onClose) {
             Icon(Icons.Rounded.Close, contentDescription = "Close settings", tint = Color.White)
         }
     }
-    HorizontalDivider(color = Separator)
+    HorizontalDivider(color = CamePalette.Separator)
 }
 
 @Composable
 private fun SectionLabel(text: String) {
     Text(
         text = text,
-        color = FujiRed,
+        color = CamePalette.Accent,
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.4.sp,
@@ -191,7 +186,7 @@ private fun ToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(PanelBlack)
+            .background(CamePalette.Panel)
             .clickable { onCheckedChange(!checked) }
             .padding(horizontal = 24.dp, vertical = 17.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -212,14 +207,14 @@ private fun FilterRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (selected) Color(0xFF171313) else PanelBlack)
+            .background(if (selected) CamePalette.PanelSelected else CamePalette.Panel)
             .padding(start = 20.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
                 .size(width = 3.dp, height = 34.dp)
-                .background(if (selected) FujiRed else Color.Transparent),
+                .background(if (selected) CamePalette.Accent else Color.Transparent),
         )
         Spacer(Modifier.width(10.dp))
         Box(
@@ -235,7 +230,7 @@ private fun FilterRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = profile.displayName.uppercase(),
-            color = if (checked) Color.White else Muted,
+            color = if (checked) Color.White else CamePalette.Muted,
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             letterSpacing = .7.sp,
@@ -256,7 +251,7 @@ private fun TimerRow(selectedSeconds: Int, onSelected: (Int) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(PanelBlack)
+            .background(CamePalette.Panel)
             .padding(horizontal = 24.dp, vertical = 17.dp),
     ) {
         LabelBlock("SELF TIMER", "Delay before shutter release")
@@ -268,7 +263,7 @@ private fun TimerRow(selectedSeconds: Int, onSelected: (Int) -> Unit) {
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(if (selected) FujiRed else Color(0xFF242424))
+                        .background(if (selected) CamePalette.Accent else CamePalette.Control)
                         .clickable { onSelected(seconds) }
                         .padding(vertical = 11.dp),
                     contentAlignment = Alignment.Center,
@@ -296,7 +291,7 @@ private fun UpdateRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(PanelBlack)
+            .background(CamePalette.Panel)
             .clickable(enabled = !checking, onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -304,7 +299,7 @@ private fun UpdateRow(
         Icon(
             imageVector = Icons.Rounded.SystemUpdateAlt,
             contentDescription = null,
-            tint = if (checking) Muted else FujiRed,
+            tint = if (checking) CamePalette.Muted else CamePalette.Accent,
             modifier = Modifier.size(23.dp),
         )
         Spacer(Modifier.width(16.dp))
@@ -316,13 +311,28 @@ private fun UpdateRow(
         if (checking) {
             CircularProgressIndicator(
                 modifier = Modifier.size(19.dp),
-                color = FujiRed,
+                color = CamePalette.Accent,
                 strokeWidth = 2.dp,
             )
         } else {
-            Text(text = "›", color = Muted, fontSize = 28.sp, fontWeight = FontWeight.Light)
+            Text(text = "›", color = CamePalette.Muted, fontSize = 28.sp, fontWeight = FontWeight.Light)
         }
     }
+}
+
+@Composable
+private fun MenuFooter() {
+    Text(
+        text = "CAMÉ ${BuildConfig.VERSION_NAME}",
+        color = CamePalette.Muted.copy(alpha = .6f),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 2.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 34.dp)
+            .padding(horizontal = 24.dp),
+    )
 }
 
 @Composable
@@ -336,7 +346,7 @@ private fun LabelBlock(title: String, subtitle: String, modifier: Modifier = Mod
             letterSpacing = .7.sp,
         )
         Spacer(Modifier.height(3.dp))
-        Text(text = subtitle, color = Muted, fontSize = 12.sp)
+        Text(text = subtitle, color = CamePalette.Muted, fontSize = 12.sp)
     }
 }
 
@@ -352,11 +362,11 @@ private fun MenuSwitch(
         onCheckedChange = onCheckedChange,
         colors = SwitchDefaults.colors(
             checkedThumbColor = Color.White,
-            checkedTrackColor = FujiRed,
+            checkedTrackColor = CamePalette.Accent,
             uncheckedThumbColor = Color(0xFFB5B5B5),
             uncheckedTrackColor = Color(0xFF3A3A3A),
             uncheckedBorderColor = Color.Transparent,
-            disabledCheckedTrackColor = FujiRed.copy(alpha = .45f),
+            disabledCheckedTrackColor = CamePalette.Accent.copy(alpha = .45f),
         ),
     )
 }

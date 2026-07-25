@@ -18,6 +18,20 @@ private val CameColors = darkColorScheme(
     error = Color(0xFFFFB4AB),
 )
 
+/** Shared dark-room palette for the menu, the library, and the overlays over the viewfinder. */
+object CamePalette {
+    val Black = Color(0xFF070707)
+    val Panel = Color(0xFF111111)
+    val PanelSelected = Color(0xFF171313)
+    val Separator = Color(0xFF2B2B2B)
+    /** Unselected segmented controls: a step above [Panel] so they read as pressable. */
+    val Control = Color(0xFF242424)
+    /** Cards that float over the viewfinder rather than sitting in a menu. */
+    val Overlay = Color(0xFF0C0C0C)
+    val Muted = Color(0xFF929292)
+    val Accent = Color(0xFFE31B23)
+}
+
 @Composable
 fun CameTheme(content: @Composable () -> Unit) {
     MaterialTheme(
