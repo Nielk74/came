@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-07-25
+
+- Strengthen every film look for computational-camera input. Measured against six real Pixel 8 and
+  8 Pro photographs, the stocks were contributing almost nothing on top of the scene development:
+  each stock's negative and print curves multiplied to a logit-space slope of essentially 1.0 —
+  0.995 for Portra 400 — so the "film" amounted to a ±10/255 wobble that was then diluted ~20% back
+  toward the untouched capture. The colour stocks now move a developed frame 1.5–2.3× further.
+- Amplify each stock's authored deviation from its own neutral response rather than retuning
+  eleven stocks by hand, so the relationships between them survive. The neutral for the print curve
+  is the contrast that would exactly cancel the negative; cross-talk and saturation amplify around
+  identity. Deviations are amplified through a soft limit, so a mild stock receives nearly the full
+  gain while an expressive one stays inside the renderer's parameter range instead of clipping
+  against it.
+- Treat added contrast and reduced contrast differently. Amplifying a flat stock's flatness
+  increases its measured distance from the source but reads as a weaker look, so Eterna and the
+  Vision3 stocks keep their authored tone and take their character from colour instead.
+- Stop diluting the look toward the untouched capture. With the response above carrying the
+  stock's identity, blending the source back in only undid what the stock had established.
+- Add a JVM regression guard on look strength, separation between stocks, and endpoint safety, and
+  make the renderer's pixel path callable without a `Bitmap` so it can be measured off-device.
+
 ## 0.5.0 - 2026-07-25
 
 - Add the selective foliage and sky colour response from the reference colour science: eligible

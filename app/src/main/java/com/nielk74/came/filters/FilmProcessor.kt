@@ -40,6 +40,28 @@ object FilmProcessor {
         val height = input.height
         val pixels = IntArray(width * height)
         input.getPixels(pixels, 0, width, 0, 0, width, height)
+        render(pixels, width, height, profile, grainEnabled, renderSeed, quality)
+
+        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        output.setPixels(pixels, 0, width, 0, 0, width, height)
+        if (input !== source) input.recycle()
+        return output
+    }
+
+    /**
+     * The whole render, in place on a packed ARGB buffer. [apply] is the Bitmap-shaped wrapper
+     * around this; keeping the pixel work Android-free lets it be measured and regression-tested
+     * on the JVM against real camera output.
+     */
+    internal fun render(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        profile: FilmProfile,
+        grainEnabled: Boolean,
+        renderSeed: Long,
+        quality: RenderQuality = RenderQuality.CAPTURE,
+    ) {
         ScenePreprocessor.apply(pixels, width, height)
         applyPointwise(pixels, profile)
         // Selective foliage/sky colour is part of the stock's colour response, not a texture
@@ -56,11 +78,6 @@ object FilmProcessor {
                 applyGrain(pixels, width, height, profile.grain, renderSeed)
             }
         }
-
-        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        output.setPixels(pixels, 0, width, 0, 0, width, height)
-        if (input !== source) input.recycle()
-        return output
     }
 
     private fun applyPointwise(pixels: IntArray, profile: FilmProfile) {

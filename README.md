@@ -46,6 +46,12 @@ pixel's own highlight core subtracted so it reads as a fringe around a bright ed
 wash over it. Its radius scales with output size, so a preview and a full-resolution capture show
 the same halo.
 
+The stocks are tuned for computational-camera input. A Pixel-class capture arrives already
+tone-mapped and saturated, which leaves a film response authored against a flat scan with very
+little left to say, so each stock's authored deviation from its own neutral response is amplified —
+through a soft limit, so a restrained stock is not driven into the same look as an expressive one,
+and asymmetrically, so a deliberately flat stock stays flat instead of turning washed out.
+
 Included at launch: Portra 400, Portra 800, Gold 200, Ektar 100, Superia 400, CineStill 800T,
 Vision3 250D, Vision3 500T, Eterna Cinema, Tri-X 400, and HP5 Plus.
 

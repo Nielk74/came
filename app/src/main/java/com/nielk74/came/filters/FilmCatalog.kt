@@ -1,5 +1,7 @@
 package com.nielk74.came.filters
 
+import kotlin.math.tanh
+
 /**
  * Camera-sized adaptation of ricoh-gr3-android's FilmLookCatalog.
  *
@@ -15,7 +17,7 @@ object FilmCatalog {
             green = channel(.24f, .025f, .78f, 1f),
             blue = channel(.27f, .012f, .70f, .97f),
             crossTalk = crossTalk(.025f, .008f), print = print(.92f, .10f, .44f, .02f),
-            saturation = .91f, strength = .82f,
+            saturation = .91f,
             splitTone = split(0f, .006f, .016f, .030f, .017f, 0f, .78f),
             foliageTone = FoliageTone(.56f, .20f), skyTone = SkyTone(.22f, .20f),
             grain = grain(.060f, 2.15f, .16f, 400L, .35f),
@@ -26,7 +28,7 @@ object FilmCatalog {
             green = channel(.29f, .018f, .74f, 1f),
             blue = channel(.32f, 0f, .66f, .955f),
             crossTalk = crossTalk(.028f, .010f), print = print(.94f, .11f, .40f, .015f),
-            saturation = .94f, strength = .80f,
+            saturation = .94f,
             splitTone = split(.003f, .006f, .017f, .035f, .018f, 0f, .82f),
             foliageTone = FoliageTone(.62f, .24f), skyTone = SkyTone(.25f, .24f),
             grain = grain(.092f, 2.55f, .25f, 800L, .42f),
@@ -37,7 +39,7 @@ object FilmCatalog {
             green = channel(.31f, .026f, .68f, 1.005f),
             blue = channel(.34f, .010f, .62f, .93f),
             crossTalk = crossTalk(.032f, .014f), print = print(.98f, .08f, .34f, .01f),
-            saturation = 1.01f, strength = .78f,
+            saturation = 1.01f,
             splitTone = split(.018f, .010f, 0f, .040f, .027f, 0f, .82f),
             grain = grain(.031f, 1.75f, .15f, 200L),
         ),
@@ -48,7 +50,7 @@ object FilmCatalog {
             blue = channel(.40f, -.014f, .82f, 1f),
             crossTalk = crossTalk(.018f),
             print = print(1.06f, -.02f, .32f, -.01f, .0002f, .996f),
-            saturation = 1.14f, strength = .84f,
+            saturation = 1.14f,
             grain = grain(.018f, 1.25f, .06f, 100L),
         ),
         profile(
@@ -57,7 +59,7 @@ object FilmCatalog {
             green = channel(.31f, .015f, .72f, 1.025f),
             blue = channel(.33f, .010f, .68f, 1.005f),
             crossTalk = Matrix3(.955f, .050f, -.005f, .018f, .964f, .018f, .002f, .045f, .953f),
-            print = print(1.01f, .04f, .32f), saturation = 1.07f, strength = .80f,
+            print = print(1.01f, .04f, .32f), saturation = 1.07f,
             splitTone = split(0f, .012f, .020f, .004f, .018f, .008f, .70f),
             grain = grain(.034f, 1.75f, .16f, 404L),
         ),
@@ -68,7 +70,7 @@ object FilmCatalog {
             green = channel(.27f, .024f, .82f, 1f),
             blue = channel(.29f, .035f, .86f, 1.07f),
             crossTalk = crossTalk(.025f), print = print(.96f, .09f, .42f, .01f),
-            saturation = .98f, strength = .82f,
+            saturation = .98f,
             splitTone = split(0f, .012f, .040f, .026f, .010f, 0f, .88f),
             halation = HalationProfile(.78f, 11, 1.05f, 1f, .006f, .012f),
             grain = grain(.046f, 2.05f, .25f, 801L),
@@ -80,7 +82,7 @@ object FilmCatalog {
             green = channel(.19f, .032f, .90f, 1f),
             blue = channel(.21f, .025f, .86f, .978f),
             crossTalk = crossTalk(.035f, .006f), print = print(.88f, .14f, .56f, .03f),
-            saturation = .94f, strength = .79f,
+            saturation = .94f,
             splitTone = split(0f, .010f, .025f, .026f, .014f, 0f, .74f),
             halation = HalationProfile(.77f, 6, .22f, 1f, .28f, .09f),
             grain = grain(.024f, 1.55f, .10f, 250L),
@@ -92,7 +94,7 @@ object FilmCatalog {
             green = channel(.19f, .035f, .92f, 1f),
             blue = channel(.21f, .042f, .88f, 1.05f),
             crossTalk = crossTalk(.036f, .006f), print = print(.90f, .15f, .55f, .02f),
-            saturation = .92f, strength = .81f,
+            saturation = .92f,
             splitTone = split(0f, .014f, .036f, .036f, .017f, 0f, .82f),
             halation = HalationProfile(.75f, 7, .30f, 1f, .14f, .035f),
             grain = grain(.034f, 1.85f, .18f, 500L),
@@ -104,7 +106,7 @@ object FilmCatalog {
             blue = channel(.17f, .045f, .94f, .99f),
             crossTalk = crossTalk(.035f),
             print = print(.82f, .19f, .65f, .05f, .001f, .986f),
-            saturation = .82f, strength = .78f,
+            saturation = .82f,
             splitTone = split(0f, .008f, .018f, .018f, .010f, .003f, .62f),
             halation = HalationProfile(.79f, 6, .15f, 1f, .24f, .08f),
             grain = grain(.025f, 1.65f, .10f, 18L),
@@ -114,7 +116,7 @@ object FilmCatalog {
             red = channel(.46f, -.018f, .72f), green = channel(.46f, -.018f, .72f),
             blue = channel(.46f, -.018f, .72f), crossTalk = Matrix3.Identity,
             print = print(1.11f, -.04f, .28f, -.02f, .0002f, .996f),
-            saturation = 0f, strength = 1f,
+            saturation = 0f,
             grain = GrainProfile(.056f, 2.1f, .58f, .30f, 0f, 320L),
             monochromeWeights = RgbWeights(.27f, .63f, .10f),
         ),
@@ -123,7 +125,7 @@ object FilmCatalog {
             red = channel(.30f, .025f, .86f), green = channel(.30f, .025f, .86f),
             blue = channel(.30f, .025f, .86f), crossTalk = Matrix3.Identity,
             print = print(.98f, .08f, .44f, .02f, .001f, .988f),
-            saturation = 0f, strength = 1f,
+            saturation = 0f,
             grain = GrainProfile(.050f, 2f, .54f, .26f, 0f, 405L),
             monochromeWeights = RgbWeights(.24f, .64f, .12f),
         ),
@@ -154,42 +156,160 @@ object FilmCatalog {
         crossTalk: Matrix3,
         print: PrintCurve,
         saturation: Float,
-        strength: Float,
         splitTone: SplitTone = SplitTone.None,
         foliageTone: FoliageTone = FoliageTone.None,
         skyTone: SkyTone = SkyTone.None,
         grain: GrainProfile = GrainProfile.None,
         halation: HalationProfile = HalationProfile.None,
         monochromeWeights: RgbWeights? = null,
-    ): FilmProfile = FilmProfile(
-        id = id,
-        displayName = name,
-        swatchTop = top,
-        swatchBottom = bottom,
-        red = red,
-        green = green,
-        blue = blue,
-        crossTalk = crossTalk,
-        print = print,
-        saturation = saturation,
-        strength = strength,
-        splitTone = splitTone,
-        foliageTone = foliageTone,
-        skyTone = skyTone,
-        grain = grain,
-        halation = halation,
-        monochromeWeights = monochromeWeights,
-        previewColorMatrix = previewMatrix(
-            redGain = red.gain,
-            greenGain = green.gain,
-            blueGain = blue.gain,
-            crossTalk = crossTalk,
-            saturation = saturation,
-            strength = strength,
-            splitTone = splitTone,
+    ): FilmProfile {
+        val tunedPrint = intensifyPrint(print, green)
+        val tunedCrossTalk = intensifyCrossTalk(crossTalk)
+        val tunedSaturation = if (saturation <= 0f) 0f
+        else 1f + soften(saturation - 1f, COLOUR_CHARACTER, SATURATION_HEADROOM)
+        val tunedSplitTone = intensifySplitTone(splitTone)
+        return FilmProfile(
+            id = id,
+            displayName = name,
+            swatchTop = top,
+            swatchBottom = bottom,
+            red = red,
+            green = green,
+            blue = blue,
+            crossTalk = tunedCrossTalk,
+            print = tunedPrint,
+            saturation = tunedSaturation,
+            strength = LOOK_STRENGTH,
+            splitTone = tunedSplitTone,
+            foliageTone = foliageTone,
+            skyTone = skyTone,
+            grain = grain,
+            halation = halation,
             monochromeWeights = monochromeWeights,
-        ),
+            previewColorMatrix = previewMatrix(
+                redGain = red.gain,
+                greenGain = green.gain,
+                blueGain = blue.gain,
+                crossTalk = tunedCrossTalk,
+                saturation = tunedSaturation,
+                strength = LOOK_STRENGTH,
+                splitTone = tunedSplitTone,
+                monochromeWeights = monochromeWeights,
+            ),
+        )
+    }
+
+    /**
+     * Amplify the print curve's departure from the stock's own neutral response.
+     *
+     * A stock's negative slope and print contrast multiply in logit space, and the reference's
+     * authored pairs very nearly cancel: measured over real Pixel 8 frames, Portra 400's combined
+     * slope was 0.995, so the stock contributed under 1 ΔE on top of the scene development. That
+     * was tolerable for a comparatively flat scan but not for a Pixel-class capture, which already
+     * arrives tone-mapped and saturated from HDR+.
+     *
+     * The neutral here is the print contrast that would exactly cancel the negative — the stock's
+     * own zero. Amplifying around it makes a flat stock flatter and a contrasty one contrastier
+     * rather than dragging every look toward one shared S-curve, so the authored relationships
+     * between stocks survive.
+     *
+     * Toe and shoulder lift shadows and compress highlights, so on a stock that is already flatter
+     * than neutral they add to the flattening. They therefore take the same gain as that stock's
+     * contrast, which keeps the whole print curve moving as one.
+     */
+    private fun intensifyPrint(print: PrintCurve, green: ChannelCurve): PrintCurve {
+        val neutral = 1f / (1f + green.contrast.coerceIn(-.5f, 1f) * .34f)
+        // Amplifying a flat stock's flatness increases its measured distance from the source while
+        // reading as a *weaker* look, not a stronger one — washed out is the very complaint this
+        // tuning exists to fix. Added contrast is amplified fully; a reduction stays near what the
+        // stock authored and lets its character come from colour instead.
+        val gain = if (print.contrast >= neutral) TONE_CHARACTER else FLATNESS_CHARACTER
+        return print.copy(
+            contrast = neutral + soften(print.contrast - neutral, gain, CONTRAST_HEADROOM),
+            toe = soften(print.toe, gain, TOE_HEADROOM),
+            shoulder = soften(print.shoulder, gain, SHOULDER_HEADROOM),
+        )
+    }
+
+    /**
+     * Amplify [deviation] by [gain] with diminishing returns, saturating toward [headroom].
+     *
+     * A flat multiplier suits the stocks authored close to neutral but drives the expressive ones
+     * into the renderer's parameter clamps — amplified linearly, Eterna's already-flat print curve
+     * clipped and rendered bleached rather than soft. Because tanh is approximately linear near
+     * zero, a mild stock still receives very nearly the full [gain] while a strong one lands inside
+     * the model's usable range and keeps its shape.
+     */
+    private fun soften(deviation: Float, gain: Float, headroom: Float): Float =
+        headroom * tanh(deviation * gain / headroom)
+
+    /**
+     * Amplify channel interaction around the identity matrix. Every row's entries deviate from
+     * identity by a set that sums to zero, so scaling them preserves the row sums and the stock's
+     * neutral axis stays neutral.
+     */
+    private fun intensifyCrossTalk(matrix: Matrix3) = Matrix3(
+        1f + (matrix.m00 - 1f) * CROSS_TALK_CHARACTER,
+        matrix.m01 * CROSS_TALK_CHARACTER,
+        matrix.m02 * CROSS_TALK_CHARACTER,
+        matrix.m10 * CROSS_TALK_CHARACTER,
+        1f + (matrix.m11 - 1f) * CROSS_TALK_CHARACTER,
+        matrix.m12 * CROSS_TALK_CHARACTER,
+        matrix.m20 * CROSS_TALK_CHARACTER,
+        matrix.m21 * CROSS_TALK_CHARACTER,
+        1f + (matrix.m22 - 1f) * CROSS_TALK_CHARACTER,
     )
+
+    /**
+     * Scale the tint magnitudes rather than [SplitTone.amount]: the authored amounts already sit
+     * near the top of their range, so scaling them would only clip against it.
+     */
+    private fun intensifySplitTone(splitTone: SplitTone) = SplitTone(
+        shadowR = splitTone.shadowR * SPLIT_TONE_CHARACTER,
+        shadowG = splitTone.shadowG * SPLIT_TONE_CHARACTER,
+        shadowB = splitTone.shadowB * SPLIT_TONE_CHARACTER,
+        highlightR = splitTone.highlightR * SPLIT_TONE_CHARACTER,
+        highlightG = splitTone.highlightG * SPLIT_TONE_CHARACTER,
+        highlightB = splitTone.highlightB * SPLIT_TONE_CHARACTER,
+        amount = splitTone.amount,
+    )
+
+    /**
+     * How far each stock's authored response is amplified for computational-camera input.
+     *
+     * These are the adaptation, not the stock data: the per-stock numbers above remain the
+     * reference's. The values were chosen by sweeping candidates over real Pixel 8 and 8 Pro
+     * frames and measuring each stock's contribution *above* the scene-development stage, which is
+     * the part a viewer reads as "the film look". Past roughly these values the curve of
+     * improvement flattens while saturation keeps falling, so they sit at the knee.
+     */
+    private const val TONE_CHARACTER = 2.6f
+    private const val FLATNESS_CHARACTER = 1.25f
+    private const val COLOUR_CHARACTER = 2.4f
+
+    /**
+     * Cross-talk is channel bleed, so amplifying it desaturates on its own. It gets a gentler gain
+     * than [COLOUR_CHARACTER] to keep the two from compounding into a grey, near-monochrome render
+     * on the stocks that authored the most bleed.
+     */
+    private const val CROSS_TALK_CHARACTER = 1.6f
+    private const val SPLIT_TONE_CHARACTER = 1.8f
+
+    /**
+     * Saturation points for [soften], each set inside the renderer's own clamp for that parameter
+     * so no stock is amplified into a hard limit and flattened against it.
+     */
+    private const val CONTRAST_HEADROOM = .30f
+    private const val TOE_HEADROOM = .42f
+    private const val SHOULDER_HEADROOM = .95f
+    private const val SATURATION_HEADROOM = .26f
+
+    /**
+     * No dilution toward the untouched capture. The reference's sub-1 look strengths kept a
+     * LUT-based look restrained; with the response above carrying the stock's character, blending
+     * the source back in would only undo what the stock had just established.
+     */
+    private const val LOOK_STRENGTH = 1f
 
     private fun channel(contrast: Float, toe: Float, shoulder: Float, gain: Float = 1f) =
         ChannelCurve(contrast, toe, shoulder, gain)
