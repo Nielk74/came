@@ -222,10 +222,17 @@ internal class SkyRegion private constructor(private val bottom: Float) {
         private const val DAY_BRIGHTNESS = .30f
         private const val FLAT_ROUGHNESS = .012f
         private const val TEXTURED_ROUGHNESS = .075f
-        private const val WARM_LIMIT = -.005f
-        private const val COOL_ENOUGH = .040f
 
-        private const val SEED_CONFIDENCE = .15f
+        /**
+         * Detection is deliberately more forgiving about warmth than the correction is. Finding the
+         * sky is a question about the whole frame, backed by brightness, flatness, and a path to the
+         * top edge; a blown sky that has kept almost no blue at all still has to be found here, and
+         * whether any given pixel of it is sky or cloud is settled later, per pixel.
+         */
+        private const val WARM_LIMIT = -.020f
+        private const val COOL_ENOUGH = .015f
+
+        private const val SEED_CONFIDENCE = .10f
         private const val GROW_CONFIDENCE = .04f
         /**
          * A block's worth of confidence, which rejects a single stray bright patch at the top edge

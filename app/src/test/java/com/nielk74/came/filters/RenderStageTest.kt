@@ -11,8 +11,8 @@ class RenderStageTest {
         assertEquals(
             listOf(
                 RenderStage.DEVELOP,
-                RenderStage.SKY,
                 RenderStage.PRINT,
+                RenderStage.SKY,
                 RenderStage.HALATION,
                 RenderStage.GRAIN,
             ),
@@ -38,7 +38,7 @@ class RenderStageTest {
             grainEnabled = true,
             quality = RenderQuality.PREVIEW,
         )
-        assertEquals(listOf(RenderStage.DEVELOP, RenderStage.SKY, RenderStage.PRINT), stages)
+        assertEquals(listOf(RenderStage.DEVELOP, RenderStage.PRINT, RenderStage.SKY), stages)
     }
 
     @Test

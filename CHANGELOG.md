@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## 0.13.0 - 2026-07-27
+
+- Finish the sky on the print instead of before it. Recovering a washed-out sky and then letting the
+  stock read the result sounds right and measures wrong: the negative and print curves exist to
+  compress a large, bright, low-chroma region, so they took most of the recovered blue straight back
+  out and the sky arrived at the photograph as the grey ceiling it started as. Measured on a frame
+  through the whole pipeline, the sky went in at (152,177,201) and came out at (138,153,159). The
+  same work placed after the stock survives to the picture.
+- Give the sky its colour by expanding the blue it still has rather than by pulling red down. The
+  correction now works on chroma around the sky's own luminance and pushes along a cyan-leaning
+  blue, with one shared gamut limit so a strong sky keeps its hue instead of turning as each channel
+  clips in turn. It also takes far less brightness out than before, since by this point the print
+  has already brought the frame down.
+- Keep cloud white. Cloud is lit by the whole sky and comes back neutral; a sky that a computational
+  exposure has run up against the top of the range comes back pale but still faintly blue, because
+  the blue was diluted rather than clipped. The correction now turns on that difference, so a cloud,
+  a white wall, and a genuinely blown patch hold their white while the sky around them goes blue.
+- Print every stock on a common base: blue through the low-mids, warmth through the tones a subject
+  occupies, and nothing at all in the highlights. A phone JPEG is close to neutral all the way up
+  its range, which is the one thing colour film never is. Each stock's own highlight tint is now
+  rolled off as it approaches paper white for the same reason — white in the picture should be
+  white.
+
 ## 0.12.0 - 2026-07-27
 
 - Treat the sky by its colour instead of by a mask. Both sky stages used to carry a region outline

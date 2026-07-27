@@ -192,6 +192,49 @@ class SkyRecoveryTest {
         assertEquals("a surface below the skyline is not sky", before[wall], frame.pixels[wall])
     }
 
+    @Test
+    fun cloudKeepsItsWhileTheSkyAroundItTurnsBlue() {
+        val frame = Frame()
+        frame.fillSky(rgb(232, 236, 243))
+        // Cloud is lit by the whole sky and comes back neutral; sky keeps a trace of blue even when
+        // the exposure has all but washed it out, and that difference is the only thing separating
+        // the two here.
+        for (y in 8 until 18) {
+            for (x in 30 until 80) frame.pixels[y * frame.width + x] = rgb(247, 247, 247)
+        }
+        val before = frame.pixels.copyOf()
+
+        recover(frame.pixels, frame.width, frame.height)
+
+        val cloud = 12 * frame.width + 55
+        val sky = 12 * frame.width + 10
+        assertEquals("a cloud must stay white", before[cloud], frame.pixels[cloud])
+        assertTrue("the sky around it comes down", luma(frame.pixels[sky]) < luma(before[sky]) - .03f)
+        assertTrue(
+            "and turns blue rather than grey",
+            coolness(frame.pixels[sky]) > coolness(before[sky]) + .02f,
+        )
+    }
+
+    @Test
+    fun aRecoveredSkyMovesTowardCyanRatherThanStraightBlue() {
+        val frame = Frame()
+        frame.fillSky(rgb(236, 240, 246))
+        val before = frame.skySample(frame.pixels)
+
+        recover(frame.pixels, frame.width, frame.height)
+
+        val after = frame.skySample(frame.pixels)
+        val red = after ushr 16 and 0xff
+        val green = after ushr 8 and 0xff
+        val blue = after and 0xff
+        assertTrue("blue should lead: $red,$green,$blue", blue > green && green > red)
+        assertTrue(
+            "green should gain on the red-to-blue axis, which is the cyan lean: $red,$green,$blue",
+            cyanLean(after) > cyanLean(before),
+        )
+    }
+
     /** The pipeline's own path: detect the region, then recover against it. */
     private fun recover(pixels: IntArray, width: Int, height: Int) {
         val region = SkyRegion.detect(pixels, width, height) ?: return
@@ -245,6 +288,14 @@ class SkyRecoveryTest {
         )
 
         fun coolness(color: Int) = ((color and 0xff) - (color ushr 16 and 0xff)) / 255f
+
+        /** Where green sits between red and blue: above zero is the cyan side of pure blue. */
+        fun cyanLean(color: Int): Float {
+            val red = color ushr 16 and 0xff
+            val green = color ushr 8 and 0xff
+            val blue = color and 0xff
+            return green - (red + blue) * .5f
+        }
 
         fun drop(before: Int, after: Int, shift: Int) =
             (before ushr shift and 0xff) - (after ushr shift and 0xff)

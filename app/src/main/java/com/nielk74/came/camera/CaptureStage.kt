@@ -7,8 +7,8 @@ enum class CaptureStage {
     EXPOSING,
     READING,
     DEVELOPING,
-    SKY,
     PRINTING,
+    SKY,
     HALATION,
     GRAIN,
     SAVING,
@@ -17,8 +17,8 @@ enum class CaptureStage {
     internal companion object {
         fun of(stage: RenderStage): CaptureStage = when (stage) {
             RenderStage.DEVELOP -> DEVELOPING
-            RenderStage.SKY -> SKY
             RenderStage.PRINT -> PRINTING
+            RenderStage.SKY -> SKY
             RenderStage.HALATION -> HALATION
             RenderStage.GRAIN -> GRAIN
         }

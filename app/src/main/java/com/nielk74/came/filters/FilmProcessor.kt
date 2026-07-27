@@ -66,23 +66,31 @@ object FilmProcessor {
     ) {
         onStage(RenderStage.DEVELOP)
         ScenePreprocessor.apply(pixels, width, height)
-        // Still part of developing the capture: recover the sky before the stock reads the scene,
-        // so the film renders a sky that has its brightness and colour back rather than a pale one.
-        onStage(RenderStage.SKY)
-        // Where the sky is, found once on the developed pixels and reused by the stock's sky colour
-        // below: the print stage changes the colours but not the geometry of the scene.
+        // Where the sky is, measured on the developed scene and held for the sky stage below. The
+        // print changes the colours of the frame but not its geometry, so this stays true across it.
         val sky = SkyRegion.detect(pixels, width, height)
-        if (sky != null) SkyRecovery.apply(pixels, width, height, sky)
         onStage(RenderStage.PRINT)
         applyPointwise(pixels, profile)
-        // Selective foliage/sky colour is part of the stock's colour response, not a texture
-        // layer, so it runs at both qualities and the preview keeps matching the capture.
+        // Selective foliage colour is part of the stock's colour response, not a texture layer, so
+        // it runs at both qualities and the preview keeps matching the capture.
         if (profile.foliageTone.enabled) {
             SelectiveColor.applyFoliage(pixels, profile.foliageTone, profile.strength)
         }
-        if (profile.skyTone.enabled && sky != null) {
-            SelectiveColor.applySky(pixels, width, height, sky, profile.skyTone, profile.strength)
+        // The sky is finished on the print rather than before it. Recovering it first and letting
+        // the stock read the result sounds right and measures wrong: the negative and print curves
+        // are built to compress a bright, low-chroma region, so they take most of the recovered blue
+        // straight back out and the sky returns to the grey it started as.
+        onStage(RenderStage.SKY)
+        if (sky != null) SkyRecovery.apply(pixels, width, height, sky)
+        if (profile.skyTone.enabled) {
+            // A frame whose sky the detector was unsure of must not lose the stock's sky colour
+            // altogether — that is how a sky ends up rendering flat grey. The hue window is tight
+            // enough to stand on its own; the region only narrows where it is known.
+            val region = sky ?: SkyRegion.WholeFrame
+            SelectiveColor.applySky(pixels, width, height, region, profile.skyTone, profile.strength)
         }
+        // The base every stock is printed on: cool low-mids, warm mids, white highlights.
+        ToneTint.apply(pixels)
         if (quality == RenderQuality.CAPTURE) {
             if (profile.halation.enabled) {
                 onStage(RenderStage.HALATION)
@@ -149,7 +157,11 @@ object FilmProcessor {
 
             if (split.amount > 0f) {
                 val tone = luma(renderedR, renderedG, renderedB).coerceIn(0f, 1f)
-                val highlightWeight = tone * tone * split.amount
+                // Paper white is white. The stock's highlight tint reaches its authored strength
+                // through the upper mids and is then rolled back off, so a cloud, a shirt in sun,
+                // and a blown window keep the neutral they arrived with instead of turning warm.
+                val highlightWeight = tone * tone * split.amount *
+                    (1f - ColorMath.smoothstep(PAPER_APPROACH, PAPER_WHITE, tone))
                 val shadowWeight = (1f - tone) * (1f - tone) * split.amount
                 renderedR += (split.shadowR - shadowTintLuma) * shadowWeight +
                     (split.highlightR - highlightTintLuma) * highlightWeight
@@ -405,6 +417,10 @@ object FilmProcessor {
     private fun linearToSrgb(value: Float): Float = ColorMath.linearToSrgb(value)
 
     private val SRGB_TO_LINEAR = ColorMath.SRGB_TO_LINEAR
+
+    /** Where the stock's highlight tint starts easing off, and where it is gone. */
+    private const val PAPER_APPROACH = .74f
+    private const val PAPER_WHITE = .95f
 
     private const val EPSILON = .000001f
     private const val TABLE_SIZE = 4096

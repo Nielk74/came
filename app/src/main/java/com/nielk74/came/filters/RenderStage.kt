@@ -11,11 +11,11 @@ enum class RenderStage {
     /** Scene development: levels, exposure, and local tonal separation. */
     DEVELOP,
 
-    /** Sky brightness and colour recovery. */
-    SKY,
-
     /** The stock's own response: negative and print curves, cross-talk, split tone, foliage. */
     PRINT,
+
+    /** Sky brightness and colour, worked on the print so the stock cannot take it back out. */
+    SKY,
 
     /** Red-orange scatter around bright edges. */
     HALATION,
