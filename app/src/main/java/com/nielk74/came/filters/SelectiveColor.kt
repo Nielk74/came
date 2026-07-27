@@ -14,9 +14,9 @@ import kotlin.math.abs
  * Both moves are deliberately *selective*. A global green- or blue-channel rotation would drag
  * skin, clothing, and painted surfaces with it; the character these stocks are known for lives in
  * how foliage and open sky render, not in every green or blue pixel. Each stage therefore gates on
- * a soft hue/chroma/luminance likelihood — the sky additionally on connectivity to the top frame
- * edge — and restores the original linear-light luminance afterwards, so these change colour
- * rather than exposure.
+ * a soft hue/chroma/luminance likelihood — the sky additionally on the frame's [SkyRegion] — and
+ * restores the original linear-light luminance afterwards, so these change colour rather than
+ * exposure.
  *
  * Adapted from ricoh-gr3-android's DevelopPipeline, operating in place on the packed ARGB buffer
  * that the camera pipeline already owns rather than on three full-resolution float planes.
@@ -68,79 +68,55 @@ internal object SelectiveColor {
     /**
      * Move blue sky toward cyan without rotating blue everywhere in the frame.
      *
-     * A row-wise connected-component pass accepts only blue/cyan pixels whose run reaches the top
-     * edge, which rejects isolated blue clothing, signage, and interior objects while avoiding a
-     * full-frame flood-fill buffer on a multi-megapixel capture.
+     * The hue window does most of the work; [region] supplies the rest, holding the shift off blue
+     * objects lower in the picture than the sky ever reaches. It replaces a row-wise connectivity
+     * pass that had to be able to trace a path back to the top edge — anything spanning the frame,
+     * a wire or a roof edge, cut every sky pixel below it out of the shift while the sky above kept
+     * it, and the two sides of that line then rendered differently.
      */
-    fun applySky(pixels: IntArray, width: Int, height: Int, tone: SkyTone, layerMix: Float) {
+    fun applySky(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        region: SkyRegion,
+        tone: SkyTone,
+        layerMix: Float,
+    ) {
         val hueAmount = (tone.cyanShift * layerMix).coerceIn(0f, .45f)
         val saturationAmount = (tone.saturationBoost * layerMix).coerceIn(0f, .50f)
         if ((hueAmount <= 0f && saturationAmount <= 0f) || width <= 0 || height <= 0) return
 
-        var previousConnected = BooleanArray(width)
-        var currentConnected = BooleanArray(width)
-        val weights = FloatArray(width)
         for (y in 0 until height) {
+            val vertical = region.weightAt(y, height)
+            if (vertical <= 0f) continue
             val row = y * width
             for (x in 0 until width) {
-                val color = pixels[row + x]
-                weights[x] = skyBlueLikelihood(
-                    (color ushr 16 and 0xff) / 255f,
-                    (color ushr 8 and 0xff) / 255f,
-                    (color and 0xff) / 255f,
+                val index = row + x
+                val color = pixels[index]
+                val red = (color ushr 16 and 0xff) / 255f
+                val green = (color ushr 8 and 0xff) / 255f
+                val blue = (color and 0xff) / 255f
+
+                val weight = skyBlueLikelihood(red, green, blue) * vertical
+                if (weight <= 0f) continue
+                val hueMix = hueAmount * weight
+                val chromaScale = 1f + saturationAmount * weight
+                if (hueMix <= 0f && chromaScale <= 1f) continue
+                val outputLuma = linearLuma(red, green, blue)
+                if (outputLuma <= 0f) continue
+
+                // Raising G and slightly easing B rotates blue toward cyan. Chroma is then
+                // expanded around the old luminance, with a gamut limit instead of clipping.
+                val blueGreenGap = (blue - green).coerceAtLeast(0f)
+                pixels[index] = lumaMatchedChroma(
+                    alpha = color and -0x1000000,
+                    targetR = red,
+                    targetG = green + blueGreenGap * hueMix,
+                    targetB = blue - blueGreenGap * hueMix * .08f,
+                    outputLuma = outputLuma,
+                    chromaScale = chromaScale,
                 )
-                currentConnected[x] = false
             }
-
-            var x = 0
-            while (x < width) {
-                while (x < width && weights[x] <= SKY_CONNECT_THRESHOLD) x++
-                if (x >= width) break
-                val start = x
-                while (x < width && weights[x] > SKY_CONNECT_THRESHOLD) x++
-                val end = x - 1
-
-                var connected = y == 0
-                var probe = (start - 1).coerceAtLeast(0)
-                val probeEnd = (end + 1).coerceAtMost(width - 1)
-                while (!connected && probe <= probeEnd) {
-                    connected = previousConnected[probe]
-                    probe++
-                }
-                if (!connected) continue
-
-                for (column in start..end) {
-                    currentConnected[column] = true
-                    val weight = weights[column]
-                    val hueMix = hueAmount * weight
-                    val chromaScale = 1f + saturationAmount * weight
-                    if (hueMix <= 0f && chromaScale <= 1f) continue
-
-                    val index = row + column
-                    val color = pixels[index]
-                    val red = (color ushr 16 and 0xff) / 255f
-                    val green = (color ushr 8 and 0xff) / 255f
-                    val blue = (color and 0xff) / 255f
-                    val outputLuma = linearLuma(red, green, blue)
-                    if (outputLuma <= 0f) continue
-
-                    // Raising G and slightly easing B rotates blue toward cyan. Chroma is then
-                    // expanded around the old luminance, with a gamut limit instead of clipping.
-                    val blueGreenGap = (blue - green).coerceAtLeast(0f)
-                    pixels[index] = lumaMatchedChroma(
-                        alpha = color and -0x1000000,
-                        targetR = red,
-                        targetG = green + blueGreenGap * hueMix,
-                        targetB = blue - blueGreenGap * hueMix * .08f,
-                        outputLuma = outputLuma,
-                        chromaScale = chromaScale,
-                    )
-                }
-            }
-
-            val swap = previousConnected
-            previousConnected = currentConnected
-            currentConnected = swap
         }
     }
 
@@ -238,5 +214,4 @@ internal object SelectiveColor {
     }
 
     private const val FOLIAGE_TARGET_HUE = 160f
-    private const val SKY_CONNECT_THRESHOLD = .03f
 }

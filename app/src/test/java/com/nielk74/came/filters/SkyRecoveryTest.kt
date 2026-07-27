@@ -11,7 +11,7 @@ class SkyRecoveryTest {
         frame.fillSky(rgb(232, 236, 243))
         val before = frame.pixels.copyOf()
 
-        SkyRecovery.apply(frame.pixels, frame.width, frame.height)
+        recover(frame.pixels, frame.width, frame.height)
 
         val skyBefore = frame.skySample(before)
         val skyAfter = frame.skySample(frame.pixels)
@@ -32,7 +32,7 @@ class SkyRecoveryTest {
         frame.fillSky(rgb(232, 236, 243))
         val before = frame.pixels.copyOf()
 
-        SkyRecovery.apply(frame.pixels, frame.width, frame.height)
+        recover(frame.pixels, frame.width, frame.height)
 
         // Well below the horizon, nothing may move: a band of darkened ground would be the
         // signature of a mask applied without a per-pixel gate.
@@ -55,8 +55,8 @@ class SkyRecoveryTest {
         val washedBefore = washed.skySample(washed.pixels)
         val deepBefore = deep.skySample(deep.pixels)
 
-        SkyRecovery.apply(washed.pixels, washed.width, washed.height)
-        SkyRecovery.apply(deep.pixels, deep.width, deep.height)
+        recover(washed.pixels, washed.width, washed.height)
+        recover(deep.pixels, deep.width, deep.height)
 
         val washedDrop = luma(washedBefore) - luma(washed.skySample(washed.pixels))
         val deepDrop = luma(deepBefore) - luma(deep.skySample(deep.pixels))
@@ -72,7 +72,7 @@ class SkyRecoveryTest {
         frame.fillSky(rgb(246, 206, 152))
         val before = frame.pixels.copyOf()
 
-        SkyRecovery.apply(frame.pixels, frame.width, frame.height)
+        recover(frame.pixels, frame.width, frame.height)
 
         assertTrue("a warm sky is the subject, not a fault", before.contentEquals(frame.pixels))
     }
@@ -87,7 +87,7 @@ class SkyRecoveryTest {
         }
         val before = frame.pixels.copyOf()
 
-        SkyRecovery.apply(frame.pixels, frame.width, frame.height)
+        recover(frame.pixels, frame.width, frame.height)
 
         assertTrue("an enclosed bright surface must not be darkened", before.contentEquals(frame.pixels))
     }
@@ -103,7 +103,7 @@ class SkyRecoveryTest {
         }
         val before = frame.pixels.copyOf()
 
-        SkyRecovery.apply(frame.pixels, frame.width, frame.height)
+        recover(frame.pixels, frame.width, frame.height)
 
         assertTrue("structure means it is not sky", before.contentEquals(frame.pixels))
     }
@@ -113,12 +113,89 @@ class SkyRecoveryTest {
         val night = Frame()
         night.pixels.fill(rgb(18, 20, 26))
         val before = night.pixels.copyOf()
-        SkyRecovery.apply(night.pixels, night.width, night.height)
+        recover(night.pixels, night.width, night.height)
         assertTrue(before.contentEquals(night.pixels))
 
-        val tiny = IntArray(4) { rgb(240, 244, 250) }
-        SkyRecovery.apply(tiny, 2, 2)
-        SkyRecovery.apply(IntArray(1) { rgb(240, 244, 250) }, 1, 1)
+        recover(IntArray(4) { rgb(240, 244, 250) }, 2, 2)
+        recover(IntArray(1) { rgb(240, 244, 250) }, 1, 1)
+    }
+
+    @Test
+    fun skyBelowABranchIsRecoveredLikeTheSkyAboveIt() {
+        // A dark branch spanning the whole frame used to truncate the block region where it crossed,
+        // which left the sky under it pale against the recovered sky over it.
+        val frame = Frame()
+        frame.fillSky(rgb(232, 236, 243))
+        val branch = 20
+        for (y in branch until branch + 2) {
+            for (x in 0 until frame.width) frame.pixels[y * frame.width + x] = rgb(38, 34, 30)
+        }
+        val before = frame.pixels.copyOf()
+
+        recover(frame.pixels, frame.width, frame.height)
+
+        val above = frame.pixels[(branch - 4) * frame.width + 60]
+        val below = frame.pixels[(branch + 6) * frame.width + 60]
+        assertTrue("sky above the branch should be recovered", luma(above) < luma(before[0]) - .02f)
+        assertEquals("both sides of the branch must render the same", above, below)
+        assertEquals(
+            "the branch itself keeps its own brightness",
+            before[branch * frame.width + 60],
+            frame.pixels[branch * frame.width + 60],
+        )
+    }
+
+    @Test
+    fun aGradientSkyIsRecoveredByHowMuchColourEachBandHasLost() {
+        // Deep blue overhead easing to a pale horizon: the correction has to follow the colour
+        // rather than a single per-frame amount, and has to arrive without a step anywhere.
+        val frame = Frame()
+        for (y in 0 until frame.horizon) {
+            val mix = y.toFloat() / frame.horizon
+            val color = rgb(
+                (96 + 136 * mix).toInt(),
+                (146 + 90 * mix).toInt(),
+                (214 + 29 * mix).toInt(),
+            )
+            for (x in 0 until frame.width) frame.pixels[y * frame.width + x] = color
+        }
+        val before = frame.pixels.copyOf()
+
+        recover(frame.pixels, frame.width, frame.height)
+
+        fun drop(y: Int) = luma(before[y * frame.width + 60]) - luma(frame.pixels[y * frame.width + 60])
+        assertTrue("the deep top of the sky needs little", drop(1) < .01f)
+        assertTrue("the washed-out band above the horizon needs the most", drop(frame.horizon - 2) > .02f)
+        // No row may pick up a large share of the total correction on its own: a region that stopped
+        // part way down the sky would show up here as one row carrying nearly all of it.
+        var previous = 0f
+        for (y in 0 until frame.horizon) {
+            val step = drop(y) - previous
+            assertTrue("recovery jumped by $step at row $y", step < .02f)
+            previous = drop(y)
+        }
+    }
+
+    @Test
+    fun aBrightCoolWallWellBelowTheSkyIsLeftAlone() {
+        val frame = Frame()
+        frame.fillSky(rgb(232, 236, 243))
+        // The same pale, faintly cool colour as the sky, but at the bottom of the frame.
+        for (y in frame.height - 12 until frame.height) {
+            for (x in 0 until frame.width) frame.pixels[y * frame.width + x] = rgb(232, 236, 243)
+        }
+        val before = frame.pixels.copyOf()
+
+        recover(frame.pixels, frame.width, frame.height)
+
+        val wall = (frame.height - 4) * frame.width + 60
+        assertEquals("a surface below the skyline is not sky", before[wall], frame.pixels[wall])
+    }
+
+    /** The pipeline's own path: detect the region, then recover against it. */
+    private fun recover(pixels: IntArray, width: Int, height: Int) {
+        val region = SkyRegion.detect(pixels, width, height) ?: return
+        SkyRecovery.apply(pixels, width, height, region)
     }
 
     /** A frame with a flat sky above [horizon] and textured ground below it. */

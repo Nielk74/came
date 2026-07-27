@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.12.0 - 2026-07-27
+
+- Treat the sky by its colour instead of by a mask. Both sky stages used to carry a region outline
+  into the pixels themselves — a block flood fill for the recovery, a row-wise connectivity pass for
+  the stock's sky colour — and every place that outline stopped short left a seam: a branch or a
+  wire spanning the frame cut off everything below it, so the sky under the line kept the pale,
+  neutral rendering while the sky above it was corrected. Which pixels are sky is now decided from
+  each pixel's own brightness, warmth, and remaining colour, which follows a skyline exactly and
+  cannot draw an edge of its own.
+- Recover each part of the sky by how much colour it has actually lost, rather than by one amount
+  for the whole frame. A sky running from deep blue overhead to washed out at the horizon now keeps
+  the top as it was and pulls the pale band back, instead of averaging the two into a single
+  correction that suits neither.
+- Find the sky once per photograph and let both stages share it. Detection now also recognises a
+  deep blue sky rather than only a bright near-neutral one, seeds on real confidence and grows on
+  little, and follows the sky's colour past a thin obstruction — so a frame whose sky was previously
+  missed altogether, or truncated at the first wire, is now read to the horizon. It is used only to
+  say how far down the frame the sky reaches, easing off over a wide band, which keeps the treatment
+  off a bright cool wall or a lit interior without putting a boundary back into the picture.
+
 ## 0.11.0 - 2026-07-25
 
 - Report the capture on a card carrying the stock's own swatch, with the pipeline laid out as a

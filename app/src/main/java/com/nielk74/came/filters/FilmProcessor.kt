@@ -69,7 +69,10 @@ object FilmProcessor {
         // Still part of developing the capture: recover the sky before the stock reads the scene,
         // so the film renders a sky that has its brightness and colour back rather than a pale one.
         onStage(RenderStage.SKY)
-        SkyRecovery.apply(pixels, width, height)
+        // Where the sky is, found once on the developed pixels and reused by the stock's sky colour
+        // below: the print stage changes the colours but not the geometry of the scene.
+        val sky = SkyRegion.detect(pixels, width, height)
+        if (sky != null) SkyRecovery.apply(pixels, width, height, sky)
         onStage(RenderStage.PRINT)
         applyPointwise(pixels, profile)
         // Selective foliage/sky colour is part of the stock's colour response, not a texture
@@ -77,8 +80,8 @@ object FilmProcessor {
         if (profile.foliageTone.enabled) {
             SelectiveColor.applyFoliage(pixels, profile.foliageTone, profile.strength)
         }
-        if (profile.skyTone.enabled) {
-            SelectiveColor.applySky(pixels, width, height, profile.skyTone, profile.strength)
+        if (profile.skyTone.enabled && sky != null) {
+            SelectiveColor.applySky(pixels, width, height, sky, profile.skyTone, profile.strength)
         }
         if (quality == RenderQuality.CAPTURE) {
             if (profile.halation.enabled) {

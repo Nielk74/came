@@ -60,7 +60,7 @@ class SelectiveColorTest {
     }
 
     @Test
-    fun skyShiftOnlyReachesBlueConnectedToTheTopEdge() {
+    fun skyShiftOnlyReachesBlueWithinTheDetectedSkyRegion() {
         val width = 16
         val height = 16
         val sky = rgb(96, 148, 210)
@@ -73,7 +73,8 @@ class SelectiveColorTest {
         }
         val before = pixels.copyOf()
 
-        SelectiveColor.applySky(pixels, width, height, SkyTone(.25f, .24f), layerMix = 1f)
+        val region = requireNotNull(SkyRegion.detect(pixels, width, height))
+        SelectiveColor.applySky(pixels, width, height, region, SkyTone(.25f, .24f), layerMix = 1f)
 
         assertTrue("connected sky should shift", pixels[width * 2 + 8] != before[width * 2 + 8])
         assertTrue(
@@ -89,7 +90,7 @@ class SelectiveColorTest {
     }
 
     @Test
-    fun skyShiftFollowsAConnectedRegionDownTheFrame() {
+    fun skyShiftFollowsASkyRegionAllTheWayDownTheFrame() {
         val width = 12
         val height = 24
         val sky = rgb(96, 148, 210)
@@ -101,10 +102,11 @@ class SelectiveColorTest {
         }
         val before = pixels.copyOf()
 
-        SelectiveColor.applySky(pixels, width, height, SkyTone(.25f), layerMix = 1f)
+        val region = requireNotNull(SkyRegion.detect(pixels, width, height))
+        SelectiveColor.applySky(pixels, width, height, region, SkyTone(.25f), layerMix = 1f)
 
         val bottom = (height - 1) * width + 5
-        assertTrue("connectivity should carry to the last row", pixels[bottom] != before[bottom])
+        assertTrue("the region should carry to the last row", pixels[bottom] != before[bottom])
     }
 
     @Test
@@ -116,9 +118,37 @@ class SelectiveColorTest {
         }
         val before = pixels.copyOf()
 
-        SelectiveColor.applySky(pixels, width, height, SkyTone(.45f, .5f), layerMix = 1f)
+        // Given the whole frame to work with, the hue window alone has to hold these back.
+        SelectiveColor.applySky(
+            pixels,
+            width,
+            height,
+            SkyRegion.WholeFrame,
+            SkyTone(.45f, .5f),
+            layerMix = 1f,
+        )
 
         assertTrue(before.contentEquals(pixels))
+    }
+
+    @Test
+    fun skyUnderAnObstructionShiftsLikeTheSkyAboveIt() {
+        val width = 24
+        val height = 24
+        val sky = rgb(96, 148, 210)
+        val pixels = IntArray(width * height) { sky }
+        // A dark wire across the whole frame: sky above and below it must render the same.
+        for (x in 0 until width) pixels[10 * width + x] = rgb(40, 36, 34)
+
+        val region = requireNotNull(SkyRegion.detect(pixels, width, height))
+        SelectiveColor.applySky(pixels, width, height, region, SkyTone(.25f, .24f), layerMix = 1f)
+
+        assertEquals(
+            "a wire must not divide the sky into a shifted half and an unshifted half",
+            pixels[6 * width + 12],
+            pixels[16 * width + 12],
+        )
+        assertTrue("sky should have shifted at all", pixels[6 * width + 12] != sky)
     }
 
     private fun rgb(red: Int, green: Int, blue: Int): Int =
