@@ -363,6 +363,19 @@ fun CameraScreen(
             successful = focusSuccessful,
         )
 
+        // A tap on the viewfinder outside the wheel closes it. The camera controls are composed
+        // above this layer and dismiss explicitly, so a single tap can still open settings,
+        // capture, switch stock, or open the library.
+        if (exposureWheelVisible && exposureState.isSupported) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(exposureWheelVisible) {
+                        detectTapGestures { exposureWheelVisible = false }
+                    },
+            )
+        }
+
         CameraControls(
             profiles = profiles,
             selectedProfileId = selectedProfile.id,
@@ -371,8 +384,12 @@ fun CameraScreen(
             lenses = availableLenses,
             selectedLens = selectedLens,
             isLensSwitching = isLensSwitching,
-            onFilterSelected = onFilterSelected,
+            onFilterSelected = { filterId ->
+                exposureWheelVisible = false
+                onFilterSelected(filterId)
+            },
             onLensSelected = { lens ->
+                exposureWheelVisible = false
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onCompositionZoomChanged(CompositionZoom.Identity)
                 cameraSession.selectLens(lens) { successful ->
@@ -381,9 +398,18 @@ fun CameraScreen(
                     }
                 }
             },
-            onCapture = onCapture,
-            onOpenGallery = onOpenGallery,
-            onOpenSettings = onOpenSettings,
+            onCapture = {
+                exposureWheelVisible = false
+                onCapture()
+            },
+            onOpenGallery = {
+                exposureWheelVisible = false
+                onOpenGallery()
+            },
+            onOpenSettings = {
+                exposureWheelVisible = false
+                onOpenSettings()
+            },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
@@ -392,8 +418,8 @@ fun CameraScreen(
             enter = fadeIn() + scaleIn(initialScale = .94f),
             exit = fadeOut() + scaleOut(targetScale = .94f),
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(start = 24.dp, end = 24.dp, bottom = 248.dp),
+                .align(Alignment.BottomEnd)
+                .padding(end = 14.dp, bottom = 104.dp),
         ) {
             ExposureThumbwheel(
                 value = exposureState.selectedValue,
@@ -527,7 +553,7 @@ private fun CaptureProgress(stage: CaptureStage?, run: CaptureRun?) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilmPackagingThumbnail(
                         profile = reported.profile,
-                        modifier = Modifier.size(width = 42.dp, height = 26.dp),
+                        modifier = Modifier.size(32.dp),
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
@@ -844,7 +870,7 @@ private fun FilmCarousel(
                 ) {
                     FilmPackagingThumbnail(
                         profile = profile,
-                        modifier = Modifier.size(width = 70.dp, height = 42.dp),
+                        modifier = Modifier.size(52.dp),
                     )
                     Spacer(Modifier.width(11.dp))
                     Column(Modifier.weight(1f)) {

@@ -219,7 +219,12 @@ class MainActivity : ComponentActivity() {
                         repository = photoRepository,
                         refreshKey = galleryRefreshKey,
                         initialPhotoUri = galleryInitialUri,
-                        onLibraryChanged = { galleryRefreshKey++ },
+                        onLibraryChanged = {
+                            // Do not let the thumbnail refresh race a URI the gallery just
+                            // removed from MediaStore.
+                            latestPhotoUri = null
+                            galleryRefreshKey++
+                        },
                         onClose = {
                             galleryOpen = false
                             galleryInitialUri = null

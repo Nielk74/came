@@ -1,8 +1,12 @@
 # Film packaging thumbnails
 
-The filter thumbnails are cropped from real packaging scans in the
+The filter thumbnails are square crops from the small end/side faces of real packaging scans in the
 [Film Packaging Archive](https://fp-archive.com/film_packaging/by_brand.html). The archive asks
 projects using the material to credit its project page.
+
+The unfolded-box scans are cropped to their compact side labels and rotated upright where needed,
+rather than shrinking the wide front panel into the UI. Vision3 500T is the exception: its source
+is a bulk-film can, so the square thumbnail keeps the complete round can lid.
 
 | camé profile | Archive item | Source scan |
 |---|---|---|

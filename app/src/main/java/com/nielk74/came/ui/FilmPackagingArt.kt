@@ -17,7 +17,7 @@ import com.nielk74.came.R
 import com.nielk74.came.filters.FilmProfile
 
 /**
- * A real packaging crop for every stock in the catalog.
+ * A real square side-face packaging crop for every stock in the catalog.
  *
  * These deliberately live in the UI layer rather than [FilmProfile]: the film response remains
  * portable and testable without Android resources, while the viewfinder and settings share one

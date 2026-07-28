@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.14.1 - 2026-07-29
+
+- Keep camé alive after deleting a photograph. Gallery changes now invalidate the activity's stale
+  thumbnail URI before reloading, and a MediaStore item that disappears during an in-flight bitmap
+  read becomes an empty image result instead of an uncaught `FileNotFoundException`.
+- Replace the wide packaging-front thumbnails with compact 360 × 360 crops from the square side or
+  end face of every unfolded box, rotating the CineStill and Superia labels upright. The Vision3
+  500T bulk-can profile keeps a square crop of its round can lid.
+- Rework the EV popover above the settings gear. Every detent now fills its pager slot so the white
+  tick sits exactly under the red index, and a tap outside dismisses the wheel while camera-control
+  taps continue through to their intended action.
+
 ## 0.14.0 - 2026-07-28
 
 - Put exposure compensation under the photographer's thumb. An `EV` badge opens a five-detent,

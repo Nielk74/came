@@ -225,7 +225,7 @@ private fun FilterRow(
         Spacer(Modifier.width(10.dp))
         FilmPackagingThumbnail(
             profile = profile,
-            modifier = Modifier.size(width = 52.dp, height = 36.dp),
+            modifier = Modifier.size(52.dp),
         )
         Spacer(Modifier.width(12.dp))
         Text(

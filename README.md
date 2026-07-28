@@ -64,9 +64,10 @@ and asymmetrically, so a deliberately flat stock stays flat instead of turning w
 Included at launch: Portra 400, Portra 800, Gold 200, Ektar 100, Superia 400, CineStill 800T,
 Vision3 250D, Vision3 500T, Eterna Cinema, Tri-X 400, and HP5 Plus.
 
-Each stock is represented by a crop of its real box, respool box, or bulk can from the
-[Film Packaging Archive](https://fp-archive.com/film_packaging/by_brand.html). Exact scan
-references and the archive's image-use notice are recorded in
+Each stock is represented by a square crop of a compact side/end face from its real box or respool
+packaging—or the lid of its bulk can—from the
+[Film Packaging Archive](https://fp-archive.com/film_packaging/by_brand.html). Exact scan references
+and the archive's image-use notice are recorded in
 [the asset manifest](docs/FILM_PACKAGING_ASSETS.md).
 
 ## Pixel capture development

@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.LruCache
+import java.io.FileNotFoundException
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -92,7 +93,8 @@ class PhotoRepository(context: Context) {
         val key = "$uri@$maxDimension"
         bitmapCache.get(key)?.let { return@withContext it }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        val boundsStream = resolver.openInputStream(uri) ?: return@withContext null
+        val boundsStream = missingMediaAsNull { resolver.openInputStream(uri) }
+            ?: return@withContext null
         boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
         val sample = calculateInSampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
@@ -100,8 +102,10 @@ class PhotoRepository(context: Context) {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        val decoded = resolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, options)
+        val decoded = missingMediaAsNull {
+            resolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            }
         } ?: return@withContext null
         bitmapCache.put(key, decoded)
         decoded
@@ -137,4 +141,16 @@ internal fun calculateInSampleSize(width: Int, height: Int, maxDimension: Int): 
         sample *= 2
     }
     return sample
+}
+
+/**
+ * MediaStore can invalidate a URI between a gallery state update and an in-flight thumbnail read.
+ * That is a normal empty-image result, not an application-fatal I/O error.
+ */
+internal inline fun <T> missingMediaAsNull(block: () -> T): T? = try {
+    block()
+} catch (_: FileNotFoundException) {
+    null
+} catch (_: SecurityException) {
+    null
 }

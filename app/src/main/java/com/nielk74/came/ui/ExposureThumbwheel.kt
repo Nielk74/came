@@ -90,7 +90,7 @@ fun ExposureThumbwheel(
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, Color.White.copy(alpha = .18f)),
         modifier = modifier
-            .widthIn(min = 260.dp, max = 340.dp)
+            .widthIn(min = 252.dp, max = 304.dp)
             .graphicsLayer { alpha = if (enabled) 1f else .52f }
             .clearAndSetSemantics {
                 contentDescription = "Exposure compensation thumbwheel"
@@ -145,6 +145,7 @@ fun ExposureThumbwheel(
                     val selected = offset < .5f
                     Column(
                         modifier = Modifier
+                            .fillMaxWidth()
                             .fillMaxHeight()
                             .graphicsLayer {
                                 alpha = 1f - offset * .54f
