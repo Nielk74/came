@@ -17,6 +17,9 @@ away. Hardware flash is off by default.
 ## Interaction
 
 - **Tap the image** — set autofocus and auto-exposure at that point.
+- **Pinch the image** — frame a 1×–4× composition crop. The camera still captures and develops the
+  complete frame; the crop is the final image operation.
+- **Tap the EV badge** — roll the tactile thumbwheel through EV -2, -1, 0, +1, and +2.
 - **Tap a lens ratio** — switch among the camera views reported by the device.
 - **Swipe the film carousel** — preview and select an enabled film look, or tap a neighbouring
   card to glide it into the centre.
@@ -27,7 +30,8 @@ away. Hardware flash is off by default.
 - **Volume key** — take a photograph without touching the screen.
 
 The menu uses a high-contrast, Fujifilm-inspired information hierarchy. It controls film grain,
-which looks are in the carousel, the self-timer, app updates, and access to the photo library.
+the optional gyroscope-driven electronic level, which looks are in the carousel, the self-timer,
+app updates, and access to the photo library.
 The viewer supports pinch/pan, double-tap, and button zoom up to 8×, previous/next navigation,
 reset, metadata, sharing, and deletion.
 
@@ -60,6 +64,11 @@ and asymmetrically, so a deliberately flat stock stays flat instead of turning w
 Included at launch: Portra 400, Portra 800, Gold 200, Ektar 100, Superia 400, CineStill 800T,
 Vision3 250D, Vision3 500T, Eterna Cinema, Tri-X 400, and HP5 Plus.
 
+Each stock is represented by a crop of its real box, respool box, or bulk can from the
+[Film Packaging Archive](https://fp-archive.com/film_packaging/by_brand.html). Exact scan
+references and the archive's image-use notice are recorded in
+[the asset manifest](docs/FILM_PACKAGING_ASSETS.md).
+
 ## Pixel capture development
 
 On devices that expose them, camé asks CameraX for the vendor's automatic extension, with HDR as
@@ -77,16 +86,17 @@ ratio, allowing Android's
 or fuse the appropriate sensor while preserving the live session. A phone exposing only one
 usable lens keeps the selector hidden.
 
-The viewfinder fits the frame rather than filling the screen, letterboxed on a tall phone, and the
-preview and the capture are pinned to one aspect ratio. What you frame is what gets saved, at full
-field of view and full resolution.
+At 1× the viewfinder fits the frame rather than filling the screen, letterboxed on a tall phone,
+and the preview and capture are pinned to one aspect ratio. Pinching scales that same 4:3 frame
+around its centre; the full-resolution film pipeline still runs first, then the matching centred
+crop is cut from the finished photograph.
 
 Rendering a full-resolution photograph through the whole pipeline takes a few seconds, and camé
 treats that as the cost of the picture rather than something to trim. While it works, the
 viewfinder dims and names the stage in progress — developing, recovering sky, printing the stock,
-halation, grain, saving — beside the swatch of the stock in the pipeline, with the run laid out as
-a trail of dots. Only the stages that photograph will actually reach are shown: halation and grain
-depend on the stock and on the grain setting.
+halation, grain, saving — beside the packaging of the stock in the pipeline, with the run laid out
+as a trail of dots. Only the stages that photograph will actually reach are shown: halation and
+grain depend on the stock and on the grain setting.
 
 Before a film stock is applied, the saved photograph passes through a restrained scene-adaptive
 development stage: guarded percentile levels, a stable trimmed-midpoint exposure curve, and

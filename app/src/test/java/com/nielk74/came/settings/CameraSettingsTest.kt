@@ -2,6 +2,7 @@ package com.nielk74.came.settings
 
 import com.nielk74.came.filters.FilmCatalog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,6 +13,7 @@ class CameraSettingsTest {
         assertEquals(FilmCatalog.profiles.map { it.id }.toSet(), settings.enabledFilterIds)
         assertEquals("portra400", settings.selectedFilterId)
         assertTrue(settings.grainEnabled)
+        assertFalse(settings.electronicLevelEnabled)
     }
 
     @Test

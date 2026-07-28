@@ -43,6 +43,7 @@ class CameraCaptureStore(private val context: Context) {
         imageCapture: ImageCapture,
         profile: FilmProfile,
         grainEnabled: Boolean,
+        compositionZoom: CompositionZoom = CompositionZoom.Identity,
         onStage: (CaptureStage) -> Unit = {},
     ): Uri {
         val sourceFile = createSourceFile()
@@ -54,18 +55,22 @@ class CameraCaptureStore(private val context: Context) {
                 onStage(CaptureStage.READING)
                 val source = decodeUpright(sourceFile)
                 try {
-                    FilmProcessor.apply(
+                    val rendered = FilmProcessor.apply(
                         source = source,
                         profile = profile,
                         grainEnabled = grainEnabled,
                         renderSeed = sourceFile.lastModified(),
                         quality = RenderQuality.CAPTURE,
                         onStage = { stage -> onStage(CaptureStage.of(stage)) },
-                    ).also { output ->
-                        if (output !== source) source.recycle()
-                    }
+                    )
+                    if (rendered !== source) source.recycle()
+
+                    // Composition zoom is intentionally the final bitmap operation: all
+                    // development, film colour, halation, and grain passes above see the complete
+                    // full-resolution sensor frame.
+                    applyCompositionCrop(rendered, compositionZoom)
                 } catch (error: Throwable) {
-                    source.recycle()
+                    if (!source.isRecycled) source.recycle()
                     throw error
                 }
             }
@@ -131,6 +136,23 @@ class CameraCaptureStore(private val context: Context) {
             true,
         ).also { upright ->
             if (upright !== decoded) decoded.recycle()
+        }
+    }
+
+    private fun applyCompositionCrop(source: Bitmap, zoom: CompositionZoom): Bitmap {
+        val crop = centeredCropWindow(source.width, source.height, zoom)
+        if (crop.isIdentityFor(source.width, source.height)) return source
+
+        return try {
+            Bitmap.createBitmap(
+                source,
+                crop.left,
+                crop.top,
+                crop.width,
+                crop.height,
+            )
+        } finally {
+            source.recycle()
         }
     }
 

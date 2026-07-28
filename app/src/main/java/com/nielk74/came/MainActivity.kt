@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nielk74.came.camera.CameraCaptureStore
 import com.nielk74.came.camera.CameraSession
+import com.nielk74.came.camera.CompositionZoom
 import com.nielk74.came.camera.CaptureRun
 import com.nielk74.came.camera.CaptureStage
 import com.nielk74.came.filters.FilmCatalog
@@ -93,6 +95,7 @@ class MainActivity : ComponentActivity() {
                 var latestPhotoUri by remember { mutableStateOf<Uri?>(null) }
                 var countdown by remember { mutableStateOf<Int?>(null) }
                 var isCapturing by remember { mutableStateOf(false) }
+                var compositionZoomFactor by rememberSaveable { mutableFloatStateOf(1f) }
                 // A StateFlow rather than plain state: the render reports its progress from a
                 // background dispatcher, and this is written from there.
                 val captureStageFlow = remember { MutableStateFlow<CaptureStage?>(null) }
@@ -157,6 +160,7 @@ class MainActivity : ComponentActivity() {
                     val profileAtShutter = selectedProfile
                     val grainAtShutter = settings.grainEnabled
                     val delayAtShutter = settings.timerSeconds
+                    val compositionZoomAtShutter = CompositionZoom.of(compositionZoomFactor)
                     captureJob = scope.launch {
                         try {
                             isCapturing = true
@@ -173,6 +177,7 @@ class MainActivity : ComponentActivity() {
                                 imageCapture = cameraSession.imageCapture,
                                 profile = profileAtShutter,
                                 grainEnabled = grainAtShutter,
+                                compositionZoom = compositionZoomAtShutter,
                                 onStage = { stage -> captureStageFlow.value = stage },
                             )
                             latestPhotoUri = savedUri
@@ -233,6 +238,9 @@ class MainActivity : ComponentActivity() {
                         onGrainChanged = { enabled ->
                             scope.launch { settingsRepository.setGrainEnabled(enabled) }
                         },
+                        onElectronicLevelChanged = { enabled ->
+                            scope.launch { settingsRepository.setElectronicLevelEnabled(enabled) }
+                        },
                         onFilterEnabledChanged = { filterId, enabled ->
                             scope.launch { settingsRepository.setFilterEnabled(filterId, enabled) }
                         },
@@ -261,6 +269,8 @@ class MainActivity : ComponentActivity() {
                         cameraSession = cameraSession,
                         profiles = enabledProfiles,
                         selectedProfileId = selectedProfile.id,
+                        compositionZoom = CompositionZoom.of(compositionZoomFactor),
+                        electronicLevelEnabled = settings.electronicLevelEnabled,
                         timerSeconds = settings.timerSeconds,
                         countdownSeconds = countdown,
                         isCapturing = isCapturing,
@@ -269,6 +279,9 @@ class MainActivity : ComponentActivity() {
                         captureFeedbackKey = captureFeedbackKey,
                         statusMessage = statusMessage,
                         latestThumbnail = latestThumbnail,
+                        onCompositionZoomChanged = { zoom ->
+                            compositionZoomFactor = zoom.factor
+                        },
                         onFilterSelected = { filterId ->
                             val precedingSelection = filterSelectionJob
                             filterSelectionJob = scope.launch {

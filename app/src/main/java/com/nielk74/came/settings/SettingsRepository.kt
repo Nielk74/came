@@ -36,6 +36,10 @@ class SettingsRepository(context: Context) {
         dataStore.edit { it[Keys.GrainEnabled] = enabled }
     }
 
+    suspend fun setElectronicLevelEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.ElectronicLevelEnabled] = enabled }
+    }
+
     suspend fun setFilterEnabled(filterId: String, enabled: Boolean) {
         requireNotNull(FilmCatalog.find(filterId)) { "Unknown film profile: $filterId" }
         dataStore.edit { preferences ->
@@ -76,6 +80,7 @@ class SettingsRepository(context: Context) {
 
     private fun readSettings(preferences: Preferences): CameraSettings = CameraSettings(
         grainEnabled = preferences[Keys.GrainEnabled] ?: true,
+        electronicLevelEnabled = preferences[Keys.ElectronicLevelEnabled] ?: false,
         enabledFilterIds = preferences[Keys.EnabledFilters] ?: allFilterIds(),
         selectedFilterId = preferences[Keys.SelectedFilter] ?: FilmCatalog.default.id,
         timerSeconds = preferences[Keys.TimerSeconds] ?: 0,
@@ -86,6 +91,7 @@ class SettingsRepository(context: Context) {
 
     private object Keys {
         val GrainEnabled = booleanPreferencesKey("grain_enabled")
+        val ElectronicLevelEnabled = booleanPreferencesKey("electronic_level_enabled")
         val EnabledFilters = stringSetPreferencesKey("enabled_filter_ids")
         val SelectedFilter = stringPreferencesKey("selected_filter_id")
         val TimerSeconds = intPreferencesKey("timer_seconds")

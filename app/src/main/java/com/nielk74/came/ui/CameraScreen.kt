@@ -23,9 +23,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -87,6 +90,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -109,9 +114,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nielk74.came.camera.CameraLens
 import com.nielk74.came.camera.CameraSession
+import com.nielk74.came.camera.CompositionZoom
 import com.nielk74.came.camera.CaptureRun
 import com.nielk74.came.camera.CaptureStage
 import com.nielk74.came.filters.FilmProfile
+import com.nielk74.came.level.rememberElectronicLevelState
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -127,6 +134,8 @@ fun CameraScreen(
     cameraSession: CameraSession,
     profiles: List<FilmProfile>,
     selectedProfileId: String,
+    compositionZoom: CompositionZoom,
+    electronicLevelEnabled: Boolean,
     timerSeconds: Int,
     countdownSeconds: Int?,
     isCapturing: Boolean,
@@ -135,6 +144,7 @@ fun CameraScreen(
     captureFeedbackKey: Int,
     statusMessage: String?,
     latestThumbnail: ImageBitmap?,
+    onCompositionZoomChanged: (CompositionZoom) -> Unit,
     onFilterSelected: (String) -> Unit,
     onCapture: () -> Unit,
     onOpenGallery: () -> Unit,
@@ -150,9 +160,23 @@ fun CameraScreen(
     var captureShadeVisible by remember { mutableStateOf(false) }
     var previewStreaming by remember { mutableStateOf(false) }
     var lensStatusMessage by remember { mutableStateOf<String?>(null) }
+    var exposureWheelVisible by remember { mutableStateOf(false) }
+    var exposureWheelEpoch by remember { mutableIntStateOf(0) }
+    var viewfinderCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val availableLenses by cameraSession.availableLenses.collectAsStateWithLifecycle()
     val selectedLens by cameraSession.selectedLens.collectAsStateWithLifecycle()
     val isLensSwitching by cameraSession.isLensSwitching.collectAsStateWithLifecycle()
+    val exposureState by cameraSession.exposureControlState.collectAsStateWithLifecycle()
+    val levelState by rememberElectronicLevelState(enabled = electronicLevelEnabled)
+    val currentZoom by rememberUpdatedState(compositionZoom)
+    val currentOnZoomChanged by rememberUpdatedState(onCompositionZoomChanged)
+    val currentIsCapturing by rememberUpdatedState(isCapturing)
+    val zoomGestureState = rememberTransformableState { zoomChange, _, _ ->
+        if (!currentIsCapturing) {
+            val nextZoom = currentZoom.scaledBy(zoomChange)
+            if (nextZoom != currentZoom) currentOnZoomChanged(nextZoom)
+        }
+    }
 
     LaunchedEffect(focusEpoch) {
         if (focusEpoch == 0) return@LaunchedEffect
@@ -171,6 +195,11 @@ fun CameraScreen(
         delay(LENS_STATUS_VISIBLE_MILLIS)
         lensStatusMessage = null
     }
+    LaunchedEffect(exposureWheelEpoch) {
+        if (exposureWheelEpoch == 0) return@LaunchedEffect
+        delay(EXPOSURE_WHEEL_VISIBLE_MILLIS)
+        exposureWheelVisible = false
+    }
     val displayedStatus = statusMessage ?: lensStatusMessage
 
     Box(
@@ -183,7 +212,7 @@ fun CameraScreen(
             colorMatrix = selectedProfile.previewColorMatrix,
             onFocus = { point ->
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                focusPoint = point
+                focusPoint = viewfinderCoordinates?.localToRoot(point) ?: point
                 focusSuccessful = null
                 focusEpoch++
                 cameraSession.focusAt(point.x, point.y) { successful ->
@@ -191,7 +220,16 @@ fun CameraScreen(
                 }
             },
             onStreamState = { previewStreaming = it },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .aspectRatio(VIEWFINDER_ASPECT_RATIO)
+                .onGloballyPositioned { viewfinderCoordinates = it }
+                .graphicsLayer {
+                    scaleX = compositionZoom.factor
+                    scaleY = compositionZoom.factor
+                }
+                .transformable(zoomGestureState),
         )
 
         AnimatedVisibility(
@@ -260,6 +298,65 @@ fun CameraScreen(
             }
         }
 
+        AnimatedVisibility(
+            visible = exposureState.isSupported,
+            enter = fadeIn() + scaleIn(initialScale = .9f),
+            exit = fadeOut() + scaleOut(targetScale = .9f),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+        ) {
+            ViewfinderPill(
+                modifier = Modifier
+                    .clickable(enabled = !isCapturing) {
+                        exposureWheelVisible = true
+                        exposureWheelEpoch++
+                    }
+                    .semantics {
+                        role = Role.Button
+                        contentDescription =
+                            "Exposure ${exposureState.selectedValue.accessibilityLabel}. Open thumbwheel."
+                    },
+            ) {
+                Text(
+                    text = "EV ${exposureState.selectedValue.label}",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.1.sp,
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = compositionZoom.factor > CompositionZoom.MIN_FACTOR,
+            enter = fadeIn() + scaleIn(initialScale = .9f),
+            exit = fadeOut() + scaleOut(targetScale = .9f),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
+                .padding(top = 14.dp),
+        ) {
+            ViewfinderPill {
+                Text(
+                    text = "${formatCompositionZoom(compositionZoom.factor)}× CROP",
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.1.sp,
+                )
+            }
+        }
+
+        ElectronicLevelIndicator(
+            state = levelState,
+            enabled = electronicLevelEnabled,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = (-46).dp),
+        )
+
         FocusReticle(
             point = focusPoint,
             visible = focusVisible,
@@ -277,6 +374,7 @@ fun CameraScreen(
             onFilterSelected = onFilterSelected,
             onLensSelected = { lens ->
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onCompositionZoomChanged(CompositionZoom.Identity)
                 cameraSession.selectLens(lens) { successful ->
                     if (!successful) {
                         lensStatusMessage = "${lens.ratioLabel} camera view unavailable"
@@ -288,6 +386,26 @@ fun CameraScreen(
             onOpenSettings = onOpenSettings,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+
+        AnimatedVisibility(
+            visible = exposureWheelVisible && exposureState.isSupported,
+            enter = fadeIn() + scaleIn(initialScale = .94f),
+            exit = fadeOut() + scaleOut(targetScale = .94f),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(start = 24.dp, end = 24.dp, bottom = 248.dp),
+        ) {
+            ExposureThumbwheel(
+                value = exposureState.selectedValue,
+                enabled = !isCapturing && !exposureState.isApplying,
+                onValueChange = { value ->
+                    exposureWheelEpoch++
+                    cameraSession.setExposureCompensation(value) { successful ->
+                        if (!successful) lensStatusMessage = "Exposure compensation unavailable"
+                    }
+                },
+            )
+        }
 
         // Above the controls, so the scrim really does cover the whole viewfinder: the film
         // carousel is the one control the shutter state does not already disable, and a stock
@@ -335,11 +453,15 @@ fun CameraScreen(
 
 /** Small translucent badge for persistent viewfinder state (flash, self timer). */
 @Composable
-private fun ViewfinderPill(content: @Composable RowScope.() -> Unit) {
+private fun ViewfinderPill(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
     Surface(
         color = Color.Black.copy(alpha = .55f),
         shape = CircleShape,
         border = BorderStroke(1.dp, Color.White.copy(alpha = .16f)),
+        modifier = modifier,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
@@ -403,15 +525,9 @@ private fun CaptureProgress(stage: CaptureStage?, run: CaptureRun?) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(26.dp)
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(reported.profile.swatchTop), Color(reported.profile.swatchBottom)),
-                                ),
-                            ),
+                    FilmPackagingThumbnail(
+                        profile = reported.profile,
+                        modifier = Modifier.size(width = 42.dp, height = 26.dp),
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
@@ -465,7 +581,9 @@ private fun FilteredPreview(
         },
         update = { cameraSession.setPreviewColorMatrix(colorMatrix) },
         modifier = modifier
-            .semantics { contentDescription = "Camera viewfinder. Tap to focus." }
+            .semantics {
+                contentDescription = "Camera viewfinder. Tap to focus; pinch to crop zoom."
+            }
             .pointerInput(cameraSession) {
                 detectTapGestures(onTap = onFocus)
             },
@@ -724,15 +842,9 @@ private fun FilmCarousel(
                     modifier = Modifier.padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        Modifier
-                            .size(42.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(profile.swatchTop), Color(profile.swatchBottom)),
-                                ),
-                            ),
+                    FilmPackagingThumbnail(
+                        profile = profile,
+                        modifier = Modifier.size(width = 70.dp, height = 42.dp),
                     )
                     Spacer(Modifier.width(11.dp))
                     Column(Modifier.weight(1f)) {
@@ -934,7 +1046,18 @@ fun CameraPermissionScreen(
     }
 }
 
+internal fun formatCompositionZoom(factor: Float): String {
+    val tenths = (CompositionZoom.of(factor).factor * 10f).roundToInt()
+    return if (tenths % 10 == 0) {
+        (tenths / 10).toString()
+    } else {
+        "${tenths / 10}.${tenths % 10}"
+    }
+}
+
 private const val COLOR_MATRIX_SIZE = 20
+private const val VIEWFINDER_ASPECT_RATIO = 3f / 4f
 private const val FOCUS_VISIBLE_MILLIS = 1_050L
 private const val CAPTURE_FEEDBACK_MILLIS = 72L
 private const val LENS_STATUS_VISIBLE_MILLIS = 2_000L
+private const val EXPOSURE_WHEEL_VISIBLE_MILLIS = 4_500L

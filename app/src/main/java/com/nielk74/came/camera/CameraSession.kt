@@ -47,13 +47,18 @@ class CameraSession(context: android.content.Context) {
     private var observedZoomInfo: CameraInfo? = null
     private var pendingZoomObserver: Observer<ZoomState>? = null
     private val defaultLens = recommendCameraLenses(emptyList(), 1f, 1f).first()
+    private var exposureRequestGeneration = 0
+    private var requestedExposureValue = ExposureValue.ZERO
     private val _availableLenses = MutableStateFlow(listOf(defaultLens))
     private val _selectedLens = MutableStateFlow(defaultLens)
     private val _isLensSwitching = MutableStateFlow(false)
+    private val _exposureControlState = MutableStateFlow(ExposureControlState())
 
     val availableLenses: StateFlow<List<CameraLens>> = _availableLenses.asStateFlow()
     val selectedLens: StateFlow<CameraLens> = _selectedLens.asStateFlow()
     val isLensSwitching: StateFlow<Boolean> = _isLensSwitching.asStateFlow()
+    val exposureControlState: StateFlow<ExposureControlState> =
+        _exposureControlState.asStateFlow()
 
     val imageCapture: ImageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
@@ -69,6 +74,7 @@ class CameraSession(context: android.content.Context) {
     ) {
         val generation = ++bindingGeneration
         resetLensState()
+        resetExposureState()
         removePendingZoomObserver()
         previewView.get()?.let { previous ->
             streamObserver?.let(previous.previewStreamState::removeObserver)
@@ -175,10 +181,31 @@ class CameraSession(context: android.content.Context) {
         switchToLens(boundCamera, target, rememberOnSuccess = true, onComplete = onComplete)
     }
 
+    /**
+     * Applies one of camé's five EV detents using the closest index supported by this camera.
+     *
+     * The requested detent is remembered across lifecycle rebinds. Unsupported or temporarily
+     * unbound cameras report failure without sending an invalid request to the HAL.
+     */
+    fun setExposureCompensation(
+        value: ExposureValue,
+        onComplete: (Boolean) -> Unit = {},
+    ) {
+        requestedExposureValue = value
+        val boundCamera = camera
+        if (boundCamera == null) {
+            _exposureControlState.value = ExposureControlState(selectedValue = value)
+            onComplete(false)
+            return
+        }
+        applyExposureCompensation(boundCamera, value, onComplete)
+    }
+
     fun unbind() {
         bindingGeneration++
         lensSwitchGeneration++
         _isLensSwitching.value = false
+        resetExposureState()
         removePendingZoomObserver()
         matrixAnimator?.cancel()
         matrixAnimator = null
@@ -229,13 +256,115 @@ class CameraSession(context: android.content.Context) {
         }.getOrNull() ?: run {
             camera = null
             resetLensState()
+            resetExposureState()
             return
         }
         camera = bound
         // A previous CameraX session or device default must never leave the torch on.
         bound.cameraControl.enableTorch(false)
         imageCapture.flashMode = ImageCapture.FLASH_MODE_OFF
+        configureExposureCompensation(bound)
         awaitZoomState(provider, lifecycleOwner, bound, generation)
+    }
+
+    private fun configureExposureCompensation(boundCamera: Camera) {
+        val exposureState = boundCamera.cameraInfo.exposureState
+        if (!exposureState.isExposureCompensationSupported) {
+            _exposureControlState.value = ExposureControlState(
+                selectedValue = requestedExposureValue,
+                appliedIndex = exposureState.exposureCompensationIndex,
+                appliedEv = exposureEvForIndex(
+                    index = exposureState.exposureCompensationIndex,
+                    numerator = exposureState.exposureCompensationStep.numerator,
+                    denominator = exposureState.exposureCompensationStep.denominator,
+                ),
+            )
+            return
+        }
+        applyExposureCompensation(boundCamera, requestedExposureValue)
+    }
+
+    private fun applyExposureCompensation(
+        boundCamera: Camera,
+        value: ExposureValue,
+        onComplete: (Boolean) -> Unit = {},
+    ) {
+        val exposureState = boundCamera.cameraInfo.exposureState
+        if (!exposureState.isExposureCompensationSupported) {
+            _exposureControlState.value = ExposureControlState(
+                selectedValue = value,
+                appliedIndex = exposureState.exposureCompensationIndex,
+                appliedEv = exposureEvForIndex(
+                    index = exposureState.exposureCompensationIndex,
+                    numerator = exposureState.exposureCompensationStep.numerator,
+                    denominator = exposureState.exposureCompensationStep.denominator,
+                ),
+            )
+            onComplete(false)
+            return
+        }
+
+        val range = exposureState.exposureCompensationRange
+        val step = exposureState.exposureCompensationStep
+        val mapping = mapExposureCompensation(
+            value = value,
+            minimumIndex = range.lower,
+            maximumIndex = range.upper,
+            stepNumerator = step.numerator,
+            stepDenominator = step.denominator,
+        )
+        val request = ++exposureRequestGeneration
+        _exposureControlState.value = ExposureControlState(
+            selectedValue = value,
+            isSupported = true,
+            isApplying = exposureState.exposureCompensationIndex != mapping.index,
+            appliedIndex = exposureState.exposureCompensationIndex,
+            appliedEv = exposureEvForIndex(
+                index = exposureState.exposureCompensationIndex,
+                numerator = step.numerator,
+                denominator = step.denominator,
+            ),
+        )
+        if (exposureState.exposureCompensationIndex == mapping.index) {
+            _exposureControlState.value = _exposureControlState.value.copy(
+                isApplying = false,
+                appliedIndex = mapping.index,
+                appliedEv = mapping.ev,
+            )
+            onComplete(true)
+            return
+        }
+
+        val result = runCatching {
+            boundCamera.cameraControl.setExposureCompensationIndex(mapping.index)
+        }.getOrElse {
+            _exposureControlState.value = _exposureControlState.value.copy(isApplying = false)
+            onComplete(false)
+            return
+        }
+        result.addListener(
+            {
+                if (request != exposureRequestGeneration || camera !== boundCamera) {
+                    return@addListener
+                }
+                val appliedIndex = runCatching { result.get() }.getOrNull()
+                val successful = appliedIndex != null
+                val actualIndex = appliedIndex ?: exposureState.exposureCompensationIndex
+                _exposureControlState.value = ExposureControlState(
+                    selectedValue = value,
+                    isSupported = true,
+                    isApplying = false,
+                    appliedIndex = actualIndex,
+                    appliedEv = exposureEvForIndex(
+                        index = actualIndex,
+                        numerator = step.numerator,
+                        denominator = step.denominator,
+                    ),
+                )
+                onComplete(successful)
+            },
+            mainExecutor,
+        )
     }
 
     private fun awaitZoomState(
@@ -367,6 +496,13 @@ class CameraSession(context: android.content.Context) {
         _isLensSwitching.value = false
         _availableLenses.value = listOf(defaultLens)
         _selectedLens.value = defaultLens
+    }
+
+    private fun resetExposureState() {
+        exposureRequestGeneration++
+        _exposureControlState.value = ExposureControlState(
+            selectedValue = requestedExposureValue,
+        )
     }
 
     @Suppress("DEPRECATION")

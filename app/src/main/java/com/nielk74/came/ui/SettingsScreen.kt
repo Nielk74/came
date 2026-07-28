@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +52,7 @@ fun SettingsScreen(
     updateActionLabel: String = "CHECK FOR UPDATES",
     isCheckingForUpdates: Boolean = false,
     onGrainChanged: (Boolean) -> Unit,
+    onElectronicLevelChanged: (Boolean) -> Unit,
     onFilterEnabledChanged: (String, Boolean) -> Unit,
     onTimerChanged: (Int) -> Unit,
     onOpenGallery: () -> Unit,
@@ -78,6 +77,13 @@ fun SettingsScreen(
                     subtitle = "Tone-driven, stock-specific texture",
                     checked = settings.grainEnabled,
                     onCheckedChange = onGrainChanged,
+                )
+                HorizontalDivider(color = CamePalette.Separator, modifier = Modifier.padding(start = 24.dp))
+                ToggleRow(
+                    title = "ELECTRONIC LEVEL",
+                    subtitle = "Gyroscope horizon; green when the camera is level",
+                    checked = settings.electronicLevelEnabled,
+                    onCheckedChange = onElectronicLevelChanged,
                 )
                 HorizontalDivider(color = CamePalette.Separator, modifier = Modifier.padding(start = 24.dp))
                 SectionLabel("FILM PROFILES")
@@ -217,15 +223,9 @@ private fun FilterRow(
                 .background(if (selected) CamePalette.Accent else Color.Transparent),
         )
         Spacer(Modifier.width(10.dp))
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(profile.swatchTop), Color(profile.swatchBottom)),
-                    ),
-                ),
+        FilmPackagingThumbnail(
+            profile = profile,
+            modifier = Modifier.size(width = 52.dp, height = 36.dp),
         )
         Spacer(Modifier.width(12.dp))
         Text(

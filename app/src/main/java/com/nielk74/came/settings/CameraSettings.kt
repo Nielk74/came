@@ -5,6 +5,7 @@ import com.nielk74.came.filters.FilmProfile
 
 data class CameraSettings(
     val grainEnabled: Boolean = true,
+    val electronicLevelEnabled: Boolean = false,
     val enabledFilterIds: Set<String> = FilmCatalog.profiles.mapTo(linkedSetOf()) { it.id },
     val selectedFilterId: String = FilmCatalog.default.id,
     val timerSeconds: Int = 0,

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.14.0 - 2026-07-28
+
+- Put exposure compensation under the photographer's thumb. An `EV` badge opens a five-detent,
+  haptic thumbwheel for -2, -1, 0, +1, and +2 stops; each detent is mapped to the closest index in
+  the active camera's own supported range and step rather than assuming every HAL uses thirds.
+- Add composition-only pinch zoom from 1× to 4×. The preview scales the exact 4:3 capture frame,
+  while CameraX still records the complete frame and every development, stock, sky, halation, and
+  grain pass runs at full size. The matching centred crop is made only after the renderer returns.
+- Add an optional electronic level. The camera menu enables a lifecycle-aware rotation-vector
+  horizon that filters sensor jitter, stays hidden without a stable reading, and changes its small
+  white moving line to green within 1.5 degrees of level.
+- Replace abstract colour swatches with crops of real film packaging from the Film Packaging
+  Archive throughout the carousel, settings, and capture-progress card, with an asset manifest
+  linking every source scan and recording the archive's image-use notice.
+
 ## 0.13.0 - 2026-07-27
 
 - Finish the sky on the print instead of before it. Recovering a washed-out sky and then letting the
