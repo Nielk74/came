@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.14.2 - 2026-07-29
+
+- Keep the real square film-packaging crops square in the camera carousel. Its fixed-height card now
+  reserves the full 52 × 52 dp artwork slot instead of constraining that slot to a rectangle.
+- Put a compact EV control directly above the settings gear, with both controls sharing one vertical
+  rail. Its thumbwheel opens centred above the camera controls, stays clear of the film carousel,
+  and remains open until Back, an outside tap, or another camera action dismisses it.
+
 ## 0.14.1 - 2026-07-29
 
 - Keep camé alive after deleting a photograph. Gallery changes now invalidate the activity's stale

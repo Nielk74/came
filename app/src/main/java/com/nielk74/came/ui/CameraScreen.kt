@@ -1,5 +1,6 @@
 package com.nielk74.came.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -117,6 +118,7 @@ import com.nielk74.came.camera.CameraSession
 import com.nielk74.came.camera.CompositionZoom
 import com.nielk74.came.camera.CaptureRun
 import com.nielk74.came.camera.CaptureStage
+import com.nielk74.came.camera.ExposureValue
 import com.nielk74.came.filters.FilmProfile
 import com.nielk74.came.level.rememberElectronicLevelState
 import kotlin.math.absoluteValue
@@ -161,7 +163,6 @@ fun CameraScreen(
     var previewStreaming by remember { mutableStateOf(false) }
     var lensStatusMessage by remember { mutableStateOf<String?>(null) }
     var exposureWheelVisible by remember { mutableStateOf(false) }
-    var exposureWheelEpoch by remember { mutableIntStateOf(0) }
     var viewfinderCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val availableLenses by cameraSession.availableLenses.collectAsStateWithLifecycle()
     val selectedLens by cameraSession.selectedLens.collectAsStateWithLifecycle()
@@ -195,11 +196,10 @@ fun CameraScreen(
         delay(LENS_STATUS_VISIBLE_MILLIS)
         lensStatusMessage = null
     }
-    LaunchedEffect(exposureWheelEpoch) {
-        if (exposureWheelEpoch == 0) return@LaunchedEffect
-        delay(EXPOSURE_WHEEL_VISIBLE_MILLIS)
-        exposureWheelVisible = false
+    LaunchedEffect(exposureState.isSupported, isCapturing) {
+        if (!exposureState.isSupported || isCapturing) exposureWheelVisible = false
     }
+    BackHandler(enabled = exposureWheelVisible) { exposureWheelVisible = false }
     val displayedStatus = statusMessage ?: lensStatusMessage
 
     Box(
@@ -299,37 +299,6 @@ fun CameraScreen(
         }
 
         AnimatedVisibility(
-            visible = exposureState.isSupported,
-            enter = fadeIn() + scaleIn(initialScale = .9f),
-            exit = fadeOut() + scaleOut(targetScale = .9f),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
-                .padding(horizontal = 14.dp, vertical = 14.dp),
-        ) {
-            ViewfinderPill(
-                modifier = Modifier
-                    .clickable(enabled = !isCapturing) {
-                        exposureWheelVisible = true
-                        exposureWheelEpoch++
-                    }
-                    .semantics {
-                        role = Role.Button
-                        contentDescription =
-                            "Exposure ${exposureState.selectedValue.accessibilityLabel}. Open thumbwheel."
-                    },
-            ) {
-                Text(
-                    text = "EV ${exposureState.selectedValue.label}",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.1.sp,
-                )
-            }
-        }
-
-        AnimatedVisibility(
             visible = compositionZoom.factor > CompositionZoom.MIN_FACTOR,
             enter = fadeIn() + scaleIn(initialScale = .9f),
             exit = fadeOut() + scaleOut(targetScale = .9f),
@@ -384,6 +353,9 @@ fun CameraScreen(
             lenses = availableLenses,
             selectedLens = selectedLens,
             isLensSwitching = isLensSwitching,
+            exposureValue = exposureState.selectedValue,
+            exposureSupported = exposureState.isSupported,
+            exposureSelectorOpen = exposureWheelVisible,
             onFilterSelected = { filterId ->
                 exposureWheelVisible = false
                 onFilterSelected(filterId)
@@ -410,22 +382,33 @@ fun CameraScreen(
                 exposureWheelVisible = false
                 onOpenSettings()
             },
+            onOpenExposure = {
+                exposureWheelVisible = true
+            },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
+        // The trigger lives directly above the settings gear. The wider selector itself stays
+        // centred above the camera controls, where it does not cover either the trigger or the
+        // film carousel.
         AnimatedVisibility(
             visible = exposureWheelVisible && exposureState.isSupported,
             enter = fadeIn() + scaleIn(initialScale = .94f),
             exit = fadeOut() + scaleOut(targetScale = .94f),
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 14.dp, bottom = 104.dp),
+                .align(Alignment.BottomCenter)
+                .padding(
+                    bottom = if (availableLenses.size > 1) {
+                        EXPOSURE_SELECTOR_BOTTOM_WITH_LENSES
+                    } else {
+                        EXPOSURE_SELECTOR_BOTTOM
+                    },
+                ),
         ) {
             ExposureThumbwheel(
                 value = exposureState.selectedValue,
                 enabled = !isCapturing && !exposureState.isApplying,
                 onValueChange = { value ->
-                    exposureWheelEpoch++
                     cameraSession.setExposureCompensation(value) { successful ->
                         if (!successful) lensStatusMessage = "Exposure compensation unavailable"
                     }
@@ -625,11 +608,15 @@ private fun CameraControls(
     lenses: List<CameraLens>,
     selectedLens: CameraLens,
     isLensSwitching: Boolean,
+    exposureValue: ExposureValue,
+    exposureSupported: Boolean,
+    exposureSelectorOpen: Boolean,
     onFilterSelected: (String) -> Unit,
     onLensSelected: (CameraLens) -> Unit,
     onCapture: () -> Unit,
     onOpenGallery: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenExposure: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -669,7 +656,9 @@ private fun CameraControls(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 30.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            // The right rail is taller because EV sits above settings; all three primary controls
+            // remain aligned along the bottom edge.
+            verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             RoundControl(onClick = onOpenGallery, description = "Open photo library") {
@@ -697,9 +686,59 @@ private fun CameraControls(
                 }
             }
             ShutterButton(enabled = !isCapturing && !isLensSwitching, onClick = onCapture)
-            RoundControl(onClick = onOpenSettings, description = "Open camera settings") {
-                Icon(Icons.Rounded.Settings, contentDescription = null, tint = Color.White)
+            Column(
+                modifier = Modifier.height(CAMERA_RIGHT_RAIL_HEIGHT),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(CAMERA_CONTROL_GAP),
+            ) {
+                // Keep the slot while CameraX discovers exposure support so the bottom controls do
+                // not jump. An unsupported slot has no visible or accessibility content.
+                if (exposureSupported) {
+                    ExposureControlButton(
+                        value = exposureValue,
+                        expanded = exposureSelectorOpen,
+                        enabled = !isCapturing,
+                        onClick = onOpenExposure,
+                    )
+                } else {
+                    Spacer(Modifier.size(CAMERA_CONTROL_SIZE))
+                }
+                RoundControl(onClick = onOpenSettings, description = "Open camera settings") {
+                    Icon(Icons.Rounded.Settings, contentDescription = null, tint = Color.White)
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ExposureControlButton(
+    value: ExposureValue,
+    expanded: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    RoundControl(
+        onClick = onClick,
+        description =
+            "Exposure compensation, ${value.accessibilityLabel}, " +
+            if (expanded) "expanded" else "collapsed",
+        enabled = enabled,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "EV",
+                color = Color.White.copy(alpha = .66f),
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = .6.sp,
+            )
+            Text(
+                text = value.label,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }
@@ -852,7 +891,7 @@ private fun FilmCarousel(
                 color = Color.Black.copy(alpha = .72f),
                 shape = RoundedCornerShape(9.dp),
                 modifier = Modifier
-                    .height(58.dp)
+                    .height(FILM_CAROUSEL_CARD_HEIGHT)
                     .graphicsLayer {
                         alpha = 1f - offset * .46f
                         scaleX = 1f - offset * .08f
@@ -865,12 +904,17 @@ private fun FilmCarousel(
                     ),
             ) {
                 Row(
-                    modifier = Modifier.padding(8.dp),
+                    // The card is 58 dp high: 3 dp above and below leaves the square packaging
+                    // artwork its requested 52 dp instead of crushing it to a 52 x 42 rectangle.
+                    modifier = Modifier.padding(
+                        horizontal = 8.dp,
+                        vertical = FILM_CAROUSEL_VERTICAL_PADDING,
+                    ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FilmPackagingThumbnail(
                         profile = profile,
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.size(FILM_CAROUSEL_THUMBNAIL_SIZE),
                     )
                     Spacer(Modifier.width(11.dp))
                     Column(Modifier.weight(1f)) {
@@ -949,16 +993,29 @@ private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
 private fun RoundControl(
     onClick: () -> Unit,
     description: String,
+    enabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(CAMERA_CONTROL_SIZE)
             .clip(CircleShape)
             .background(Color.Black.copy(alpha = .66f))
             .border(1.dp, Color.White.copy(alpha = .34f), CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = description },
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .graphicsLayer { alpha = if (enabled) 1f else .52f }
+            .clearAndSetSemantics {
+                contentDescription = description
+                role = Role.Button
+                if (enabled) {
+                    onClick {
+                        onClick()
+                        true
+                    }
+                } else {
+                    disabled()
+                }
+            },
         contentAlignment = Alignment.Center,
         content = content,
     )
@@ -1086,4 +1143,11 @@ private const val VIEWFINDER_ASPECT_RATIO = 3f / 4f
 private const val FOCUS_VISIBLE_MILLIS = 1_050L
 private const val CAPTURE_FEEDBACK_MILLIS = 72L
 private const val LENS_STATUS_VISIBLE_MILLIS = 2_000L
-private const val EXPOSURE_WHEEL_VISIBLE_MILLIS = 4_500L
+internal val FILM_CAROUSEL_CARD_HEIGHT = 58.dp
+internal val FILM_CAROUSEL_VERTICAL_PADDING = 3.dp
+internal val FILM_CAROUSEL_THUMBNAIL_SIZE = 52.dp
+internal val CAMERA_CONTROL_SIZE = 48.dp
+internal val CAMERA_CONTROL_GAP = 8.dp
+internal val CAMERA_RIGHT_RAIL_HEIGHT = CAMERA_CONTROL_SIZE * 2 + CAMERA_CONTROL_GAP
+private val EXPOSURE_SELECTOR_BOTTOM = 266.dp
+private val EXPOSURE_SELECTOR_BOTTOM_WITH_LENSES = 320.dp
