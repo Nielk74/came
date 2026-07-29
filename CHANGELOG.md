@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.14.4 - 2026-07-29
+
+- Make the Portra 400 end panel fill its square thumbnail edge to edge, removing the scan-colored
+  side gutters while retaining the complete stock name, roll count, format, and Kodak footer.
+
 ## 0.14.3 - 2026-07-29
 
 - Reframe Portra 400 around the complete left end of the current five-roll box. The new thumbnail

@@ -8,8 +8,8 @@ The unfolded-box scans are cropped to their compact side labels and rotated upri
 rather than shrinking the wide front panel into the UI. Vision3 500T is the exception: its source
 is a bulk-film can, so the square thumbnail keeps the complete round can lid.
 
-Portra 400 preserves the complete left end panel at its original aspect ratio, using the scan's
-neutral background at the sides rather than stretching the package or clipping its Kodak footer.
+Portra 400 uses the complete left end panel, square-normalized so the printed face fills the UI
+thumbnail edge to edge without scan background or clipped identifying text.
 
 | camé profile | Archive item | Source scan |
 |---|---|---|
