@@ -2,6 +2,7 @@ package com.nielk74.came.level
 
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.round
 
 /** Default tolerance used by camera-style electronic levels. */
 const val DEFAULT_LEVEL_TOLERANCE_DEGREES = 1.5f
@@ -12,29 +13,26 @@ const val DEFAULT_LEVEL_TOLERANCE_DEGREES = 1.5f
  */
 internal object ElectronicLevelMath {
     /**
-     * Finds the horizon roll from gravity projected into the display plane.
+     * Finds the horizon roll from gravity projected into the device plane.
      *
-     * Android sensor axes stay attached to the device's natural orientation, so [displayQuarterTurns]
-     * rotates the projection into the currently displayed orientation. A value is unavailable when
-     * the phone is close to lying flat because gravity then has no stable screen-plane direction.
+     * camé's UI stays portrait locked, so display rotation cannot identify a landscape pose. The
+     * gravity angle is instead measured relative to its nearest cardinal orientation. Portrait,
+     * reverse portrait, and both landscapes therefore all report zero when held level. A value is
+     * unavailable when the phone is close to lying flat because gravity then has no stable
+     * screen-plane direction.
      */
     fun rollDegreesFromGravity(
         gravityX: Float,
         gravityY: Float,
-        displayQuarterTurns: Int = 0,
     ): Float? {
-        val (displayX, displayY) = when (displayQuarterTurns.mod(4)) {
-            0 -> gravityX to gravityY
-            1 -> gravityY to -gravityX
-            2 -> -gravityX to -gravityY
-            else -> -gravityY to gravityX
-        }
-        val projectedMagnitudeSquared = displayX * displayX + displayY * displayY
+        val projectedMagnitudeSquared = gravityX * gravityX + gravityY * gravityY
         if (projectedMagnitudeSquared < MINIMUM_GRAVITY_PROJECTION_SQUARED) return null
 
-        return normalizeDegrees(
-            Math.toDegrees(atan2(displayX.toDouble(), -displayY.toDouble())).toFloat(),
+        val naturalRoll = normalizeDegrees(
+            Math.toDegrees(atan2(gravityX.toDouble(), -gravityY.toDouble())).toFloat(),
         )
+        val nearestCardinal = round(naturalRoll / QUARTER_TURN_DEGREES) * QUARTER_TURN_DEGREES
+        return normalizeDegrees(naturalRoll - nearestCardinal)
     }
 
     fun isNearLevel(
@@ -49,6 +47,7 @@ internal object ElectronicLevelMath {
     }
 
     private const val MINIMUM_GRAVITY_PROJECTION_SQUARED = 0.01f
+    private const val QUARTER_TURN_DEGREES = 90f
     private const val HALF_TURN_DEGREES = 180f
     private const val FULL_TURN_DEGREES = 360f
 }

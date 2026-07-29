@@ -40,15 +40,50 @@ class ElectronicLevelMathTest {
     }
 
     @Test
-    fun displayRotationRemapsNaturalSensorAxes() {
+    fun allCardinalDevicePosesAreLevelWithoutDisplayRotation() {
         assertEquals(
             0f,
             ElectronicLevelMath.rollDegreesFromGravity(
                 gravityX = 1f,
                 gravityY = 0f,
-                displayQuarterTurns = 1,
             )!!,
             .001f,
+        )
+        assertEquals(
+            0f,
+            ElectronicLevelMath.rollDegreesFromGravity(
+                gravityX = -1f,
+                gravityY = 0f,
+            )!!,
+            .001f,
+        )
+        assertEquals(
+            0f,
+            ElectronicLevelMath.rollDegreesFromGravity(
+                gravityX = 0f,
+                gravityY = 1f,
+            )!!,
+            .001f,
+        )
+    }
+
+    @Test
+    fun landscapeRollIsMeasuredFromItsNearestHorizontal() {
+        assertEquals(
+            10f,
+            ElectronicLevelMath.rollDegreesFromGravity(
+                gravityX = .984808f,
+                gravityY = .173648f,
+            )!!,
+            .01f,
+        )
+        assertEquals(
+            -10f,
+            ElectronicLevelMath.rollDegreesFromGravity(
+                gravityX = .984808f,
+                gravityY = -.173648f,
+            )!!,
+            .01f,
         )
     }
 

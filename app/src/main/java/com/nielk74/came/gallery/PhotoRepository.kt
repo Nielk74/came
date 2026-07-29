@@ -9,6 +9,9 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.LruCache
+import androidx.exifinterface.media.ExifInterface
+import com.nielk74.came.filters.FilmCatalog
+import com.nielk74.came.photo.resolvedFilmFilterName
 import java.io.FileNotFoundException
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
@@ -109,6 +112,19 @@ class PhotoRepository(context: Context) {
         } ?: return@withContext null
         bitmapCache.put(key, decoded)
         decoded
+    }
+
+    suspend fun loadFilmFilterName(uri: Uri): String? = withContext(Dispatchers.IO) {
+        missingMediaAsNull {
+            resolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                val exif = ExifInterface(descriptor.fileDescriptor)
+                resolvedFilmFilterName(
+                    description = exif.getAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION),
+                    userComment = exif.getAttribute(ExifInterface.TAG_USER_COMMENT),
+                    profileNameForId = { profileId -> FilmCatalog.find(profileId)?.displayName },
+                )
+            }
+        }
     }
 
     suspend fun delete(photo: PhotoItem): Boolean = withContext(Dispatchers.IO) {

@@ -137,6 +137,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun CameraScreen(
     cameraSession: CameraSession,
+    surfaceRotation: Int,
+    physicalUiRotationDegrees: Float,
     profiles: List<FilmProfile>,
     selectedProfileId: String,
     compositionZoom: CompositionZoom,
@@ -214,6 +216,7 @@ fun CameraScreen(
     ) {
         FilteredPreview(
             cameraSession = cameraSession,
+            outputRotation = surfaceRotation,
             colorMatrix = selectedProfile.previewColorMatrix,
             onFocus = { point ->
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -326,6 +329,7 @@ fun CameraScreen(
         ElectronicLevelIndicator(
             state = levelState,
             enabled = electronicLevelEnabled,
+            physicalUiRotationDegrees = physicalUiRotationDegrees,
             modifier = Modifier
                 .align(Alignment.Center)
                 .offset(y = (-46).dp),
@@ -362,6 +366,7 @@ fun CameraScreen(
         CameraControls(
             profiles = profiles,
             selectedProfileId = selectedProfile.id,
+            physicalUiRotationDegrees = physicalUiRotationDegrees,
             latestThumbnail = latestThumbnail,
             isCapturing = isCapturing,
             lenses = availableLenses,
@@ -439,7 +444,11 @@ fun CameraScreen(
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize(),
         ) {
-            CaptureProgress(stage = captureStage, run = captureRun)
+            CaptureProgress(
+                stage = captureStage,
+                run = captureRun,
+                physicalUiRotationDegrees = physicalUiRotationDegrees,
+            )
         }
 
         if (countdownSeconds != null) {
@@ -557,7 +566,11 @@ private fun ViewfinderPill(
  * swallows stray taps while the photograph is being made.
  */
 @Composable
-private fun CaptureProgress(stage: CaptureStage?, run: CaptureRun?) {
+private fun CaptureProgress(
+    stage: CaptureStage?,
+    run: CaptureRun?,
+    physicalUiRotationDegrees: Float,
+) {
     var lastStage by remember { mutableStateOf(stage) }
     if (stage != null) lastStage = stage
     var lastRun by remember { mutableStateOf(run) }
@@ -602,6 +615,7 @@ private fun CaptureProgress(stage: CaptureStage?, run: CaptureRun?) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilmPackagingThumbnail(
                         profile = reported.profile,
+                        physicalUiRotationDegrees = physicalUiRotationDegrees,
                         modifier = Modifier.size(32.dp),
                     )
                     Spacer(Modifier.width(12.dp))
@@ -632,6 +646,7 @@ private fun CaptureProgress(stage: CaptureStage?, run: CaptureRun?) {
 @Composable
 private fun FilteredPreview(
     cameraSession: CameraSession,
+    outputRotation: Int,
     colorMatrix: FloatArray,
     onFocus: (Offset) -> Unit,
     onStreamState: (Boolean) -> Unit,
@@ -651,10 +666,18 @@ private fun FilteredPreview(
                 // the viewfinder showed a tighter picture than the one that got saved. Letterboxing
                 // against the black backdrop keeps what you frame and what you get identical.
                 scaleType = PreviewView.ScaleType.FIT_CENTER
-                cameraSession.bind(lifecycleOwner, this, onStreamState)
+                cameraSession.bind(
+                    lifecycleOwner = lifecycleOwner,
+                    view = this,
+                    outputRotation = outputRotation,
+                    onStreamState = onStreamState,
+                )
             }
         },
-        update = { cameraSession.setPreviewColorMatrix(colorMatrix) },
+        update = {
+            cameraSession.setOutputRotation(outputRotation)
+            cameraSession.setPreviewColorMatrix(colorMatrix)
+        },
         modifier = modifier
             .semantics {
                 contentDescription = "Camera viewfinder. Tap to focus; pinch to crop zoom."
@@ -669,6 +692,7 @@ private fun FilteredPreview(
 private fun CameraControls(
     profiles: List<FilmProfile>,
     selectedProfileId: String,
+    physicalUiRotationDegrees: Float,
     latestThumbnail: ImageBitmap?,
     isCapturing: Boolean,
     lenses: List<CameraLens>,
@@ -699,6 +723,7 @@ private fun CameraControls(
         FilmCarousel(
             profiles = profiles,
             selectedProfileId = selectedProfileId,
+            physicalUiRotationDegrees = physicalUiRotationDegrees,
             onFilterSelected = onFilterSelected,
         )
         AnimatedVisibility(
@@ -743,7 +768,10 @@ private fun CameraControls(
                                 bitmap = bitmap,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(CircleShape)
+                                    .graphicsLayer { rotationZ = physicalUiRotationDegrees },
                             )
                         } else {
                             Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White)
@@ -903,6 +931,7 @@ private fun LensSelector(
 private fun FilmCarousel(
     profiles: List<FilmProfile>,
     selectedProfileId: String,
+    physicalUiRotationDegrees: Float,
     onFilterSelected: (String) -> Unit,
 ) {
     val selectedIndex = profiles.indexOfFirst { it.id == selectedProfileId }.coerceAtLeast(0)
@@ -980,6 +1009,7 @@ private fun FilmCarousel(
                 ) {
                     FilmPackagingThumbnail(
                         profile = profile,
+                        physicalUiRotationDegrees = physicalUiRotationDegrees,
                         modifier = Modifier.size(FILM_CAROUSEL_THUMBNAIL_SIZE),
                     )
                     Spacer(Modifier.width(11.dp))

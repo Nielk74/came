@@ -5,9 +5,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.hardware.display.DisplayManager
-import android.view.Display
-import android.view.Surface
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -46,12 +43,6 @@ class ElectronicLevelDataSource(
     context: Context,
     private val lifecycle: Lifecycle,
     initiallyEnabled: Boolean = false,
-    private val displayRotationProvider: () -> Int = {
-        context.getSystemService(DisplayManager::class.java)
-            ?.getDisplay(Display.DEFAULT_DISPLAY)
-            ?.rotation
-            ?: Surface.ROTATION_0
-    },
 ) : DefaultLifecycleObserver, SensorEventListener, AutoCloseable {
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val orientationSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
@@ -106,7 +97,6 @@ class ElectronicLevelDataSource(
         val rawRoll = ElectronicLevelMath.rollDegreesFromGravity(
             gravityX = gravityX,
             gravityY = gravityY,
-            displayQuarterTurns = displayRotationProvider().toQuarterTurns(),
         )
         if (rawRoll == null) {
             mutableState.value = ElectronicLevelState(ElectronicLevelStatus.WAITING_FOR_READING)
@@ -166,11 +156,4 @@ class ElectronicLevelDataSource(
         registered = false
         smoother.reset()
     }
-}
-
-private fun Int.toQuarterTurns(): Int = when (this) {
-    Surface.ROTATION_90 -> 1
-    Surface.ROTATION_180 -> 2
-    Surface.ROTATION_270 -> 3
-    else -> 0
 }

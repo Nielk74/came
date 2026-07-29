@@ -48,6 +48,7 @@ import com.nielk74.came.settings.CameraSettings
 fun SettingsScreen(
     settings: CameraSettings,
     profiles: List<FilmProfile> = FilmCatalog.profiles,
+    physicalUiRotationDegrees: Float = 0f,
     updateStatus: String? = null,
     updateActionLabel: String = "CHECK FOR UPDATES",
     isCheckingForUpdates: Boolean = false,
@@ -91,6 +92,7 @@ fun SettingsScreen(
                     val checked = profile.id in settings.enabledFilterIds
                     FilterRow(
                         profile = profile,
+                        physicalUiRotationDegrees = physicalUiRotationDegrees,
                         checked = checked,
                         selected = profile.id == settings.selectedFilterId,
                         canToggle = !checked || settings.enabledFilterIds.size > 1,
@@ -205,6 +207,7 @@ private fun ToggleRow(
 @Composable
 private fun FilterRow(
     profile: FilmProfile,
+    physicalUiRotationDegrees: Float,
     checked: Boolean,
     selected: Boolean,
     canToggle: Boolean,
@@ -225,6 +228,7 @@ private fun FilterRow(
         Spacer(Modifier.width(10.dp))
         FilmPackagingThumbnail(
             profile = profile,
+            physicalUiRotationDegrees = physicalUiRotationDegrees,
             modifier = Modifier.size(52.dp),
         )
         Spacer(Modifier.width(12.dp))

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.17.0 - 2026-07-30
+
+- Make the electronic level understand all four physical phone poses and rotate the complete
+  horizon helper with the phone, while keeping the portrait-locked camera layout and its text
+  fixed.
+- Rotate image content—not labels—in the film-packaging cards, latest-photo control, and album
+  grid thumbnails so they stay upright to the photographer.
+- Record the selected film in every new JPEG using a human-readable EXIF ImageDescription and a
+  stable camé film ID in EXIF UserComment. Show the recorded film in the album's photograph
+  information card, with an honest “Not recorded” fallback for earlier files.
+
 ## 0.16.0 - 2026-07-29
 
 - Rotate the finished photograph automatically from the phone's physical orientation. Portrait,

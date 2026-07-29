@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -29,6 +30,7 @@ fun ElectronicLevelIndicator(
     state: ElectronicLevelState,
     modifier: Modifier = Modifier,
     enabled: Boolean = false,
+    physicalUiRotationDegrees: Float = 0f,
 ) {
     if (!enabled || !state.isActive) return
 
@@ -47,6 +49,7 @@ fun ElectronicLevelIndicator(
     Canvas(
         modifier = modifier
             .size(width = 96.dp, height = 28.dp)
+            .graphicsLayer { rotationZ = physicalUiRotationDegrees }
             .semantics {
                 contentDescription = "Electronic level, $direction"
             },

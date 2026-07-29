@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -26,6 +27,7 @@ import com.nielk74.came.filters.FilmProfile
 @Composable
 internal fun FilmPackagingThumbnail(
     profile: FilmProfile,
+    physicalUiRotationDegrees: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     val resource = packagingResource(profile.id)
@@ -38,7 +40,9 @@ internal fun FilmPackagingThumbnail(
             painter = painterResource(resource),
             contentDescription = "${profile.displayName} film packaging",
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { rotationZ = physicalUiRotationDegrees },
         )
     }
 }

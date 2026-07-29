@@ -45,6 +45,8 @@ import com.nielk74.came.camera.CaptureRun
 import com.nielk74.came.camera.CaptureStage
 import com.nielk74.came.filters.FilmCatalog
 import com.nielk74.came.gallery.PhotoRepository
+import com.nielk74.came.orientation.rememberDeviceSurfaceRotation
+import com.nielk74.came.orientation.rotationDegreesForSurfaceRotation
 import com.nielk74.came.settings.CameraSettings
 import com.nielk74.came.settings.SettingsRepository
 import com.nielk74.came.ui.CameTheme
@@ -83,6 +85,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             CameTheme {
+                val deviceSurfaceRotation by rememberDeviceSurfaceRotation()
+                val physicalUiRotationDegrees =
+                    rotationDegreesForSurfaceRotation(deviceSurfaceRotation)
                 val scope = rememberCoroutineScope()
                 val updateViewModel: AppUpdateViewModel = viewModel()
                 val appUpdateStatus by updateViewModel.updateStatus.collectAsStateWithLifecycle()
@@ -224,6 +229,7 @@ class MainActivity : ComponentActivity() {
                     GalleryScreen(
                         repository = photoRepository,
                         refreshKey = galleryRefreshKey,
+                        physicalUiRotationDegrees = physicalUiRotationDegrees,
                         initialPhotoUri = galleryInitialUri,
                         onLibraryChanged = {
                             // Do not let the thumbnail refresh race a URI the gallery just
@@ -241,6 +247,7 @@ class MainActivity : ComponentActivity() {
                     SettingsScreen(
                         settings = settings,
                         profiles = FilmCatalog.profiles,
+                        physicalUiRotationDegrees = physicalUiRotationDegrees,
                         updateStatus = updateSummary(appUpdateStatus, downloadState),
                         updateActionLabel = updateActionLabel(appUpdateStatus, downloadState),
                         isCheckingForUpdates = appUpdateStatus is UpdateStatus.Checking ||
@@ -278,6 +285,8 @@ class MainActivity : ComponentActivity() {
                 } else {
                     CameraScreen(
                         cameraSession = cameraSession,
+                        surfaceRotation = deviceSurfaceRotation,
+                        physicalUiRotationDegrees = physicalUiRotationDegrees,
                         profiles = enabledProfiles,
                         selectedProfileId = selectedProfile.id,
                         compositionZoom = CompositionZoom.of(compositionZoomFactor),

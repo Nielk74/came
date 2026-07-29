@@ -13,9 +13,12 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
+import com.nielk74.came.BuildConfig
 import com.nielk74.came.filters.FilmProcessor
 import com.nielk74.came.filters.FilmProfile
 import com.nielk74.came.filters.RenderQuality
+import com.nielk74.came.photo.filmFilterDescription
+import com.nielk74.came.photo.filmFilterUserComment
 import java.io.File
 import java.io.IOException
 import java.time.LocalDateTime
@@ -77,7 +80,7 @@ class CameraCaptureStore(private val context: Context) {
 
             return try {
                 onStage(CaptureStage.SAVING)
-                publish(rendered)
+                publish(rendered, profile)
             } finally {
                 rendered.recycle()
             }
@@ -156,7 +159,10 @@ class CameraCaptureStore(private val context: Context) {
         }
     }
 
-    private suspend fun publish(bitmap: Bitmap): Uri = withContext(Dispatchers.IO) {
+    private suspend fun publish(
+        bitmap: Bitmap,
+        profile: FilmProfile,
+    ): Uri = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val timestamp = System.currentTimeMillis()
         val name = "CAME_${FILE_TIMESTAMP.format(LocalDateTime.now())}.jpg"
@@ -193,6 +199,24 @@ class CameraCaptureStore(private val context: Context) {
                     throw IOException("The rendered photo could not be encoded")
                 }
             } ?: throw IOException("MediaStore could not open the new photo")
+
+            resolver.openFileDescriptor(uri, "rw")?.use { descriptor ->
+                ExifInterface(descriptor.fileDescriptor).apply {
+                    setAttribute(
+                        ExifInterface.TAG_IMAGE_DESCRIPTION,
+                        filmFilterDescription(profile.displayName),
+                    )
+                    setAttribute(
+                        ExifInterface.TAG_USER_COMMENT,
+                        filmFilterUserComment(profile.id),
+                    )
+                    setAttribute(
+                        ExifInterface.TAG_SOFTWARE,
+                        "came ${BuildConfig.VERSION_NAME}",
+                    )
+                    saveAttributes()
+                }
+            } ?: throw IOException("MediaStore could not attach the film metadata")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 resolver.update(

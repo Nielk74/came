@@ -87,6 +87,7 @@ import kotlinx.coroutines.launch
 fun GalleryScreen(
     repository: PhotoRepository,
     refreshKey: Int,
+    physicalUiRotationDegrees: Float = 0f,
     initialPhotoUri: Uri? = null,
     onLibraryChanged: () -> Unit,
     onClose: () -> Unit,
@@ -161,6 +162,7 @@ fun GalleryScreen(
                     else -> PhotoGrid(
                         repository = repository,
                         photos = photos,
+                        physicalUiRotationDegrees = physicalUiRotationDegrees,
                         onOpen = { selectedIndex = photos.indexOf(it) },
                     )
                 }
@@ -196,7 +198,12 @@ private fun LibraryHeader(count: Int, loading: Boolean, onRefresh: () -> Unit, o
 }
 
 @Composable
-private fun PhotoGrid(repository: PhotoRepository, photos: List<PhotoItem>, onOpen: (PhotoItem) -> Unit) {
+private fun PhotoGrid(
+    repository: PhotoRepository,
+    photos: List<PhotoItem>,
+    physicalUiRotationDegrees: Float,
+    onOpen: (PhotoItem) -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -217,6 +224,7 @@ private fun PhotoGrid(repository: PhotoRepository, photos: List<PhotoItem>, onOp
                     uri = photo.uri,
                     maxDimension = 480,
                     contentScale = ContentScale.Crop,
+                    rotationDegrees = physicalUiRotationDegrees,
                     modifier = Modifier.fillMaxSize(),
                 )
                 Text(
@@ -252,10 +260,16 @@ private fun PhotoViewer(
     var showInfo by remember(photo.uri) { mutableStateOf(false) }
     var confirmDelete by remember(photo.uri) { mutableStateOf(false) }
     var error by remember(photo.uri) { mutableStateOf<String?>(null) }
+    var filmFilterName by remember(photo.uri) { mutableStateOf<String?>(null) }
+    var filmMetadataLoaded by remember(photo.uri) { mutableStateOf(false) }
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
         val nextScale = (scale * zoomChange).coerceIn(MIN_ZOOM, MAX_ZOOM)
         scale = nextScale
         translation = if (nextScale == MIN_ZOOM) Offset.Zero else translation + panChange
+    }
+    LaunchedEffect(photo.uri) {
+        filmFilterName = runCatching { repository.loadFilmFilterName(photo.uri) }.getOrNull()
+        filmMetadataLoaded = true
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -395,6 +409,17 @@ private fun PhotoViewer(
                 Text(formatFullDate(photo.dateTakenMillis), color = CamePalette.Muted, fontSize = 12.sp)
                 Text("${photo.width} × ${photo.height} px", color = CamePalette.Muted, fontSize = 12.sp)
                 Text(formatBytes(photo.sizeBytes), color = CamePalette.Muted, fontSize = 12.sp)
+                Text(
+                    "Film filter: ${
+                        when {
+                            filmFilterName != null -> filmFilterName
+                            filmMetadataLoaded -> "Not recorded"
+                            else -> "Reading…"
+                        }
+                    }",
+                    color = CamePalette.Muted,
+                    fontSize = 12.sp,
+                )
                 Text("Pinch or double-tap to zoom • drag to pan • tap 1× to reset", color = CamePalette.Muted, fontSize = 11.sp)
             }
         }
@@ -438,6 +463,7 @@ private fun RepositoryImage(
     uri: Uri,
     maxDimension: Int,
     contentScale: ContentScale,
+    rotationDegrees: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     var image by remember(repository, uri, maxDimension) { mutableStateOf<ImageBitmap?>(null) }
@@ -449,7 +475,7 @@ private fun RepositoryImage(
             bitmap = requireNotNull(image),
             contentDescription = null,
             contentScale = contentScale,
-            modifier = modifier,
+            modifier = modifier.graphicsLayer { rotationZ = rotationDegrees },
         )
     } else {
         Box(modifier.background(CamePalette.Panel), contentAlignment = Alignment.Center) {

@@ -5,7 +5,6 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.util.Size
-import android.view.OrientationEventListener
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
@@ -84,19 +83,12 @@ class CameraSession(context: android.content.Context) {
         .setFlashMode(ImageCapture.FLASH_MODE_OFF)
         .setResolutionSelector(frameShape())
         .build()
-    private var sensedSurfaceRotation: Int? = null
     private var outputSurfaceRotation: Int? = null
-    private val orientationListener = object : OrientationEventListener(appContext) {
-        override fun onOrientationChanged(orientation: Int) {
-            val rotation = surfaceRotationForDeviceOrientation(orientation) ?: return
-            sensedSurfaceRotation = rotation
-            updateOutputRotation(rotation)
-        }
-    }
 
     fun bind(
         lifecycleOwner: LifecycleOwner,
         view: PreviewView,
+        outputRotation: Int,
         onStreamState: (Boolean) -> Unit = {},
     ) {
         if (closed) return
@@ -104,8 +96,7 @@ class CameraSession(context: android.content.Context) {
         resetLensState()
         resetExposureState()
         qrCodeAnalyzer.stop()
-        sensedSurfaceRotation = null
-        if (orientationListener.canDetectOrientation()) orientationListener.enable()
+        updateOutputRotation(outputRotation)
         removePendingZoomObserver()
         previewView.get()?.let { previous ->
             streamObserver?.let(previous.previewStreamState::removeObserver)
@@ -238,8 +229,6 @@ class CameraSession(context: android.content.Context) {
         _isLensSwitching.value = false
         resetExposureState()
         qrCodeAnalyzer.stop()
-        orientationListener.disable()
-        sensedSurfaceRotation = null
         removePendingZoomObserver()
         matrixAnimator?.cancel()
         matrixAnimator = null
@@ -257,6 +246,11 @@ class CameraSession(context: android.content.Context) {
         qrAnalysis.clearAnalyzer()
         qrCodeAnalyzer.close()
         analysisExecutor.shutdown()
+    }
+
+    /** Updates still capture and QR analysis while deliberately leaving the preview portrait. */
+    fun setOutputRotation(rotation: Int) {
+        updateOutputRotation(rotation)
     }
 
     private fun chooseQualitySelector(manager: ExtensionsManager): CameraSelection {
@@ -283,7 +277,6 @@ class CameraSession(context: android.content.Context) {
         val previewBuilder = Preview.Builder().setResolutionSelector(frameShape())
         if (rotation != null) {
             previewBuilder.setTargetRotation(rotation)
-            updateOutputRotation(sensedSurfaceRotation ?: rotation)
         }
         val preview = previewBuilder.build().apply { surfaceProvider = view.surfaceProvider }
         provider.unbindAll()

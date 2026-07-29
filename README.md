@@ -29,15 +29,17 @@ away. Hardware flash is off by default.
 - **Tap the gear** — open the full-screen camera menu.
 - **Point at a QR code** — when it contains a web address, tap the link that appears in the
   viewfinder.
-- **Rotate the phone** — the saved photograph follows the physical portrait or landscape
-  orientation while the camera controls stay in their portrait layout.
+- **Rotate the phone** — the saved photograph, electronic level, and thumbnail artwork follow the
+  physical portrait or landscape orientation while labels and camera controls keep their portrait
+  layout.
 - **Volume key** — take a photograph without touching the screen.
 
 The menu uses a high-contrast, Fujifilm-inspired information hierarchy. It controls film grain,
 the optional gyroscope-driven electronic level, which looks are in the carousel, the self-timer,
 app updates, and access to the photo library.
 The viewer supports pinch/pan, double-tap, and button zoom up to 8×, previous/next navigation,
-reset, metadata, sharing, and deletion.
+reset, sharing, and deletion. Its information card reads the film used for each new photograph
+from the JPEG's own EXIF metadata, rather than relying on transient app state.
 
 ## Film looks
 
@@ -95,9 +97,11 @@ usable lens keeps the selector hidden.
 At 1× the viewfinder fits the frame rather than filling the screen, letterboxed on a tall phone,
 and the preview and capture are pinned to one aspect ratio. Pinching scales that same 4:3 frame
 around its centre; the full-resolution film pipeline still runs first, then the matching centred
-crop is cut from the finished photograph. A physical-orientation listener updates CameraX capture
-metadata independently of the portrait-locked UI; the source EXIF transform is then baked into the
-rendered pixels before processing and saving.
+crop is cut from the finished photograph. One lifecycle-bound physical-orientation source updates
+CameraX capture metadata, the electronic horizon, and image-only thumbnail rotation independently
+of the portrait-locked UI; the source EXIF transform is then baked into the rendered pixels before
+processing and saving. The finished JPEG records both the selected film's stable camé ID and its
+human-readable name in EXIF.
 
 Rendering a full-resolution photograph through the whole pipeline takes a few seconds, and camé
 treats that as the cost of the picture rather than something to trim. While it works, the
