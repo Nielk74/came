@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.16.0 - 2026-07-29
+
+- Rotate the finished photograph automatically from the phone's physical orientation. Portrait,
+  both landscape directions, and reverse portrait now produce upright pixels even though camé's
+  viewfinder controls remain locked in their portrait layout.
+- Drive CameraX capture and QR-analysis rotation from a lifecycle-bound orientation listener, then
+  keep the existing EXIF-aware decode as the single place that bakes orientation into the rendered
+  JPEG.
+
 ## 0.15.0 - 2026-07-29
 
 - Recognize web links in QR codes directly in the live viewfinder. A single understated, tappable

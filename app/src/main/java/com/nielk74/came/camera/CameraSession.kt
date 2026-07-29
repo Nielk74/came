@@ -5,6 +5,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.util.Size
+import android.view.OrientationEventListener
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
@@ -83,6 +84,15 @@ class CameraSession(context: android.content.Context) {
         .setFlashMode(ImageCapture.FLASH_MODE_OFF)
         .setResolutionSelector(frameShape())
         .build()
+    private var sensedSurfaceRotation: Int? = null
+    private var outputSurfaceRotation: Int? = null
+    private val orientationListener = object : OrientationEventListener(appContext) {
+        override fun onOrientationChanged(orientation: Int) {
+            val rotation = surfaceRotationForDeviceOrientation(orientation) ?: return
+            sensedSurfaceRotation = rotation
+            updateOutputRotation(rotation)
+        }
+    }
 
     fun bind(
         lifecycleOwner: LifecycleOwner,
@@ -94,6 +104,8 @@ class CameraSession(context: android.content.Context) {
         resetLensState()
         resetExposureState()
         qrCodeAnalyzer.stop()
+        sensedSurfaceRotation = null
+        if (orientationListener.canDetectOrientation()) orientationListener.enable()
         removePendingZoomObserver()
         previewView.get()?.let { previous ->
             streamObserver?.let(previous.previewStreamState::removeObserver)
@@ -226,6 +238,8 @@ class CameraSession(context: android.content.Context) {
         _isLensSwitching.value = false
         resetExposureState()
         qrCodeAnalyzer.stop()
+        orientationListener.disable()
+        sensedSurfaceRotation = null
         removePendingZoomObserver()
         matrixAnimator?.cancel()
         matrixAnimator = null
@@ -269,8 +283,7 @@ class CameraSession(context: android.content.Context) {
         val previewBuilder = Preview.Builder().setResolutionSelector(frameShape())
         if (rotation != null) {
             previewBuilder.setTargetRotation(rotation)
-            imageCapture.targetRotation = rotation
-            qrAnalysis.targetRotation = rotation
+            updateOutputRotation(sensedSurfaceRotation ?: rotation)
         }
         val preview = previewBuilder.build().apply { surfaceProvider = view.surfaceProvider }
         provider.unbindAll()
@@ -306,6 +319,19 @@ class CameraSession(context: android.content.Context) {
         imageCapture.flashMode = ImageCapture.FLASH_MODE_OFF
         configureExposureCompensation(bound)
         awaitZoomState(provider, lifecycleOwner, bound, generation)
+    }
+
+    /**
+     * Keeps the portrait-locked preview still while capture metadata follows the phone itself.
+     *
+     * CameraCaptureStore then applies CameraX's EXIF orientation while decoding, so the published
+     * JPEG has upright pixels and needs no residual orientation tag.
+     */
+    private fun updateOutputRotation(rotation: Int) {
+        if (outputSurfaceRotation == rotation) return
+        outputSurfaceRotation = rotation
+        imageCapture.targetRotation = rotation
+        qrAnalysis.targetRotation = rotation
     }
 
     private fun configureExposureCompensation(boundCamera: Camera) {

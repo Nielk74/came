@@ -29,6 +29,8 @@ away. Hardware flash is off by default.
 - **Tap the gear** — open the full-screen camera menu.
 - **Point at a QR code** — when it contains a web address, tap the link that appears in the
   viewfinder.
+- **Rotate the phone** — the saved photograph follows the physical portrait or landscape
+  orientation while the camera controls stay in their portrait layout.
 - **Volume key** — take a photograph without touching the screen.
 
 The menu uses a high-contrast, Fujifilm-inspired information hierarchy. It controls film grain,
@@ -93,7 +95,9 @@ usable lens keeps the selector hidden.
 At 1× the viewfinder fits the frame rather than filling the screen, letterboxed on a tall phone,
 and the preview and capture are pinned to one aspect ratio. Pinching scales that same 4:3 frame
 around its centre; the full-resolution film pipeline still runs first, then the matching centred
-crop is cut from the finished photograph.
+crop is cut from the finished photograph. A physical-orientation listener updates CameraX capture
+metadata independently of the portrait-locked UI; the source EXIF transform is then baked into the
+rendered pixels before processing and saving.
 
 Rendering a full-resolution photograph through the whole pipeline takes a few seconds, and camé
 treats that as the cost of the picture rather than something to trim. While it works, the
