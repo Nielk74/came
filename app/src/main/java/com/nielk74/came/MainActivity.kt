@@ -65,9 +65,15 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private val captureStore by lazy { CameraCaptureStore(applicationContext) }
-    private val cameraSession by lazy { CameraSession(applicationContext) }
+    private val cameraSessionHolder = lazy { CameraSession(applicationContext) }
+    private val cameraSession by cameraSessionHolder
     private val photoRepository by lazy { PhotoRepository(applicationContext) }
     private var volumeShutterAction: (() -> Unit)? = null
+
+    override fun onDestroy() {
+        if (cameraSessionHolder.isInitialized()) cameraSession.close()
+        super.onDestroy()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

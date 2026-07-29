@@ -27,6 +27,8 @@ away. Hardware flash is off by default.
   self-timer shows beside the flash badge.
 - **Tap the thumbnail** — open the in-app photo library and full-screen viewer.
 - **Tap the gear** — open the full-screen camera menu.
+- **Point at a QR code** — when it contains a web address, tap the link that appears in the
+  viewfinder.
 - **Volume key** — take a photograph without touching the screen.
 
 The menu uses a high-contrast, Fujifilm-inspired information hierarchy. It controls film grain,
@@ -73,7 +75,8 @@ and the archive's image-use notice are recorded in
 ## Pixel capture development
 
 On devices that expose them, camé asks CameraX for the vendor's automatic extension, with HDR as
-a fallback; availability is always checked at runtime. Google lists the Pixel 8 family among
+a fallback; availability and concurrent image-analysis support are always checked at runtime.
+Google lists the Pixel 8 family among
 [CameraX extension-capable devices](https://developer.android.com/media/camera/supported-devices),
 and Android documents the available
 [Auto and HDR extension modes](https://developer.android.com/media/camera/camerax/extensions-api).
@@ -123,8 +126,9 @@ filters can invalidate the existing gain map unless the editor updates it to mat
 ## Privacy
 
 camé has no account, ads, analytics, or network upload. Photographs stay in Android's media
-library. Network access is used only to check this repository's public GitHub Releases feed and
-download an update after you accept it.
+library, and QR recognition runs entirely on the device. Network access is used only to check this
+repository's public GitHub Releases feed and download an update after you accept it; opening a
+recognized link is handed to Android's normal browser.
 
 ## Build
 

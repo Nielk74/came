@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.util.Size
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
@@ -11,11 +12,13 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.ZoomState
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.extensions.ExtensionMode
 import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -25,6 +28,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,12 +58,24 @@ class CameraSession(context: android.content.Context) {
     private val _selectedLens = MutableStateFlow(defaultLens)
     private val _isLensSwitching = MutableStateFlow(false)
     private val _exposureControlState = MutableStateFlow(ExposureControlState())
+    private val _recognizedQrLink = MutableStateFlow<String?>(null)
+    private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val qrCodeAnalyzer = QrCodeAnalyzer(
+        onLinkChanged = { link -> _recognizedQrLink.value = link },
+    )
+    private val qrAnalysis = ImageAnalysis.Builder()
+        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+        .setResolutionSelector(qrFrameShape())
+        .build()
+        .also { it.setAnalyzer(analysisExecutor, qrCodeAnalyzer) }
+    private var closed = false
 
     val availableLenses: StateFlow<List<CameraLens>> = _availableLenses.asStateFlow()
     val selectedLens: StateFlow<CameraLens> = _selectedLens.asStateFlow()
     val isLensSwitching: StateFlow<Boolean> = _isLensSwitching.asStateFlow()
     val exposureControlState: StateFlow<ExposureControlState> =
         _exposureControlState.asStateFlow()
+    val recognizedQrLink: StateFlow<String?> = _recognizedQrLink.asStateFlow()
 
     val imageCapture: ImageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
@@ -72,9 +89,11 @@ class CameraSession(context: android.content.Context) {
         view: PreviewView,
         onStreamState: (Boolean) -> Unit = {},
     ) {
+        if (closed) return
         val generation = ++bindingGeneration
         resetLensState()
         resetExposureState()
+        qrCodeAnalyzer.stop()
         removePendingZoomObserver()
         previewView.get()?.let { previous ->
             streamObserver?.let(previous.previewStreamState::removeObserver)
@@ -206,6 +225,7 @@ class CameraSession(context: android.content.Context) {
         lensSwitchGeneration++
         _isLensSwitching.value = false
         resetExposureState()
+        qrCodeAnalyzer.stop()
         removePendingZoomObserver()
         matrixAnimator?.cancel()
         matrixAnimator = null
@@ -216,11 +236,22 @@ class CameraSession(context: android.content.Context) {
         if (providerFuture.isDone) providerFuture.get().unbindAll()
     }
 
+    fun close() {
+        if (closed) return
+        closed = true
+        unbind()
+        qrAnalysis.clearAnalyzer()
+        qrCodeAnalyzer.close()
+        analysisExecutor.shutdown()
+    }
+
     private fun chooseQualitySelector(manager: ExtensionsManager): CameraSelection {
         val base = CameraSelector.DEFAULT_BACK_CAMERA
         val mode = when {
-            manager.isExtensionAvailable(base, ExtensionMode.AUTO) -> ExtensionMode.AUTO
-            manager.isExtensionAvailable(base, ExtensionMode.HDR) -> ExtensionMode.HDR
+            manager.isExtensionAvailable(base, ExtensionMode.AUTO) &&
+                manager.isImageAnalysisSupported(base, ExtensionMode.AUTO) -> ExtensionMode.AUTO
+            manager.isExtensionAvailable(base, ExtensionMode.HDR) &&
+                manager.isImageAnalysisSupported(base, ExtensionMode.HDR) -> ExtensionMode.HDR
             else -> return CameraSelection(base, false)
         }
         return CameraSelection(manager.getExtensionEnabledCameraSelector(base, mode), true)
@@ -239,11 +270,19 @@ class CameraSession(context: android.content.Context) {
         if (rotation != null) {
             previewBuilder.setTargetRotation(rotation)
             imageCapture.targetRotation = rotation
+            qrAnalysis.targetRotation = rotation
         }
         val preview = previewBuilder.build().apply { surfaceProvider = view.surfaceProvider }
         provider.unbindAll()
+        qrCodeAnalyzer.start()
         val bound = runCatching {
-            provider.bindToLifecycle(lifecycleOwner, selection.selector, preview, imageCapture)
+            provider.bindToLifecycle(
+                lifecycleOwner,
+                selection.selector,
+                preview,
+                imageCapture,
+                qrAnalysis,
+            )
         }.recoverCatching { error ->
             if (!selection.isExtension) throw error
             provider.unbindAll()
@@ -252,8 +291,10 @@ class CameraSession(context: android.content.Context) {
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
                 imageCapture,
+                qrAnalysis,
             )
         }.getOrNull() ?: run {
+            qrCodeAnalyzer.stop()
             camera = null
             resetLensState()
             resetExposureState()
@@ -518,6 +559,17 @@ class CameraSession(context: android.content.Context) {
         .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
         .build()
 
+    /** Keeps live QR work bounded while retaining enough detail to read a code at arm's length. */
+    private fun qrFrameShape(): ResolutionSelector = ResolutionSelector.Builder()
+        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+        .setResolutionStrategy(
+            ResolutionStrategy(
+                Size(QR_ANALYSIS_WIDTH, QR_ANALYSIS_HEIGHT),
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+            ),
+        )
+        .build()
+
     private fun applyMatrix(view: PreviewView, values: FloatArray) {
         applyMatrixWhenReady(view, values, remainingAttempts = 8)
     }
@@ -555,6 +607,8 @@ class CameraSession(context: android.content.Context) {
         const val LENS_RATIO_EPSILON = .01f
         const val FILTER_ANIMATION_MILLIS = 240L
         const val TEXTURE_RETRY_MILLIS = 24L
+        const val QR_ANALYSIS_WIDTH = 1_280
+        const val QR_ANALYSIS_HEIGHT = 960
         val IDENTITY_MATRIX = floatArrayOf(
             1f, 0f, 0f, 0f, 0f,
             0f, 1f, 0f, 0f, 0f,

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.15.0 - 2026-07-29
+
+- Recognize web links in QR codes directly in the live viewfinder. A single understated, tappable
+  text link appears when a code is in frame—without adding a scanner mode or another camera icon—
+  and brief missed frames no longer make it flicker.
+- Keep QR recognition entirely on-device with a bundled scanner model, restrict it to QR codes and
+  safe HTTP(S) destinations, and retain vendor Auto/HDR capture on devices that support concurrent
+  image analysis.
+
 ## 0.14.4 - 2026-07-29
 
 - Make the Portra 400 end panel fill its square thumbnail edge to edge, removing the scan-colored

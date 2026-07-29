@@ -32,8 +32,8 @@ android {
         applicationId = "com.nielk74.came"
         minSdk = 26
         targetSdk = 34
-        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 19
-        versionName = buildParam("VERSION_NAME") ?: "0.14.4"
+        versionCode = buildParam("VERSION_CODE")?.toIntOrNull() ?: 20
+        versionName = buildParam("VERSION_NAME") ?: "0.15.0"
         buildConfigField(
             "String",
             "GITHUB_REPO",
@@ -108,6 +108,7 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.mlkit.barcode.scanning)
 
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)

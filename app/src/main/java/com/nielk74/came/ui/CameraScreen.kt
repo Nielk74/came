@@ -95,6 +95,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -107,6 +108,8 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -168,7 +171,9 @@ fun CameraScreen(
     val selectedLens by cameraSession.selectedLens.collectAsStateWithLifecycle()
     val isLensSwitching by cameraSession.isLensSwitching.collectAsStateWithLifecycle()
     val exposureState by cameraSession.exposureControlState.collectAsStateWithLifecycle()
+    val recognizedQrLink by cameraSession.recognizedQrLink.collectAsStateWithLifecycle()
     val levelState by rememberElectronicLevelState(enabled = electronicLevelEnabled)
+    val uriHandler = LocalUriHandler.current
     val currentZoom by rememberUpdatedState(compositionZoom)
     val currentOnZoomChanged by rememberUpdatedState(onCompositionZoomChanged)
     val currentIsCapturing by rememberUpdatedState(isCapturing)
@@ -332,6 +337,15 @@ fun CameraScreen(
             successful = focusSuccessful,
         )
 
+        QrLinkChip(
+            link = recognizedQrLink,
+            onOpen = { link -> runCatching { uriHandler.openUri(link) } },
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = QR_LINK_VERTICAL_OFFSET)
+                .padding(horizontal = 24.dp),
+        )
+
         // A tap on the viewfinder outside the wheel closes it. The camera controls are composed
         // above this layer and dismiss explicitly, so a single tap can still open settings,
         // capture, switch stock, or open the library.
@@ -456,6 +470,58 @@ fun CameraScreen(
 
         if (captureShadeVisible) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+        }
+    }
+}
+
+/** The QR affordance is intentionally only the recognized link: no scanner mode or extra icon. */
+@Composable
+private fun QrLinkChip(
+    link: String?,
+    onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedContent(
+        targetState = link,
+        transitionSpec = {
+            (fadeIn(tween(150)) + scaleIn(initialScale = .96f)) togetherWith
+                (fadeOut(tween(180)) + scaleOut(targetScale = .96f))
+        },
+        contentAlignment = Alignment.Center,
+        label = "qr-link",
+        modifier = modifier,
+    ) { activeLink ->
+        if (activeLink == null) {
+            Spacer(Modifier.size(0.dp))
+        } else {
+            val openLink = { onOpen(activeLink) }
+            Surface(
+                color = Color.Black.copy(alpha = .78f),
+                contentColor = Color.White,
+                shape = CircleShape,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = .24f)),
+                modifier = Modifier
+                    .widthIn(max = 340.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = openLink)
+                    .clearAndSetSemantics {
+                        contentDescription = "Open link $activeLink"
+                        role = Role.Button
+                        onClick {
+                            openLink()
+                            true
+                        }
+                    },
+            ) {
+                Text(
+                    text = activeLink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = TextDecoration.Underline,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+                )
+            }
         }
     }
 }
@@ -1143,6 +1209,7 @@ private const val VIEWFINDER_ASPECT_RATIO = 3f / 4f
 private const val FOCUS_VISIBLE_MILLIS = 1_050L
 private const val CAPTURE_FEEDBACK_MILLIS = 72L
 private const val LENS_STATUS_VISIBLE_MILLIS = 2_000L
+private val QR_LINK_VERTICAL_OFFSET = 118.dp
 internal val FILM_CAROUSEL_CARD_HEIGHT = 58.dp
 internal val FILM_CAROUSEL_VERTICAL_PADDING = 3.dp
 internal val FILM_CAROUSEL_THUMBNAIL_SIZE = 52.dp
