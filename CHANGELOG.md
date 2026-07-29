@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.14.3 - 2026-07-29
+
+- Reframe Portra 400 around the complete left end of the current five-roll box. The new thumbnail
+  keeps the panel's real proportions and all four identifying lines, including the full Kodak
+  Professional footer, instead of zooming in until the packaging was clipped.
+
 ## 0.14.2 - 2026-07-29
 
 - Keep the real square film-packaging crops square in the camera carousel. Its fixed-height card now
