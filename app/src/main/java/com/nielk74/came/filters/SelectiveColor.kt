@@ -4,6 +4,7 @@ import com.nielk74.came.filters.ColorMath.linearLuma
 import com.nielk74.came.filters.ColorMath.linearToSrgb
 import com.nielk74.came.filters.ColorMath.luma
 import com.nielk74.came.filters.ColorMath.luminanceOfLinear
+import com.nielk74.came.filters.ColorMath.paperWhiteRolloff
 import com.nielk74.came.filters.ColorMath.smoothstep
 import com.nielk74.came.filters.ColorMath.srgbToLinear
 import kotlin.math.abs
@@ -29,40 +30,53 @@ internal object SelectiveColor {
      * window, and near-neutrals fail the saturation gate, so the mask stays on plausible foliage.
      */
     fun applyFoliage(pixels: IntArray, tone: FoliageTone, layerMix: Float) {
-        val hueAmount = (tone.cyanShift * layerMix).coerceIn(0f, 1f)
-        val saturationAmount = (tone.saturationBoost * layerMix).coerceIn(0f, .50f)
+        val hueAmount = foliageHueAmount(tone, layerMix)
+        val saturationAmount = foliageSaturationAmount(tone, layerMix)
         if (hueAmount <= 0f && saturationAmount <= 0f) return
 
-        val shifted = FloatArray(3)
+        val pixel = Rgb()
         for (index in pixels.indices) {
-            val color = pixels[index]
-            val red = (color ushr 16 and 0xff) / 255f
-            val green = (color ushr 8 and 0xff) / 255f
-            val blue = (color and 0xff) / 255f
-
-            val weight = foliageGreenLikelihood(red, green, blue)
-            if (weight <= 0f) continue
-            val outputLuma = linearLuma(red, green, blue)
-            if (outputLuma <= 0f) continue
-
-            val max = maxOf(red, green, blue)
-            val min = minOf(red, green, blue)
-            val delta = max - min
-            if (delta <= 0f || max <= 0f) continue
-
-            val hue = 60f * ((blue - red) / delta + 2f)
-            val shiftedHue = hue + (FOLIAGE_TARGET_HUE - hue) * hueAmount * weight
-            hsvToRgb(shiftedHue, delta / max, max, shifted)
-
-            pixels[index] = lumaMatchedChroma(
-                alpha = color and -0x1000000,
-                targetR = shifted[0],
-                targetG = shifted[1],
-                targetB = shifted[2],
-                outputLuma = outputLuma,
-                chromaScale = 1f + saturationAmount * weight,
-            )
+            pixel.setFrom(pixels[index])
+            shadeFoliage(pixel, hueAmount, saturationAmount)
+            pixels[index] = pixel.pack(pixels[index] and -0x1000000)
         }
+    }
+
+    fun foliageHueAmount(tone: FoliageTone, layerMix: Float): Float =
+        (tone.cyanShift * layerMix).coerceIn(0f, 1f)
+
+    fun foliageSaturationAmount(tone: FoliageTone, layerMix: Float): Float =
+        (tone.saturationBoost * layerMix).coerceIn(0f, .50f)
+
+    /** [applyFoliage] for one pixel already in flight, so the chain need not round-trip it. */
+    fun shadeFoliage(pixel: Rgb, hueAmount: Float, saturationAmount: Float) {
+        val red = pixel.red
+        val green = pixel.green
+        val blue = pixel.blue
+
+        val weight = foliageGreenLikelihood(red, green, blue)
+        if (weight <= 0f) return
+        val outputLuma = linearLuma(red, green, blue)
+        if (outputLuma <= 0f) return
+
+        val max = maxOf(red, green, blue)
+        val min = minOf(red, green, blue)
+        val delta = max - min
+        if (delta <= 0f || max <= 0f) return
+
+        val hue = 60f * ((blue - red) / delta + 2f)
+        val shiftedHue = hue + (FOLIAGE_TARGET_HUE - hue) * hueAmount * weight
+        // Writes the shifted colour into [pixel] itself; lumaMatchedChroma reads its targets into
+        // locals before writing, so using it as its own scratch is safe and saves an allocation.
+        hsvToRgb(shiftedHue, delta / max, max, pixel)
+        lumaMatchedChroma(
+            pixel = pixel,
+            targetR = pixel.red,
+            targetG = pixel.green,
+            targetB = pixel.blue,
+            outputLuma = outputLuma,
+            chromaScale = 1f + saturationAmount * weight,
+        )
     }
 
     /**
@@ -82,42 +96,63 @@ internal object SelectiveColor {
         tone: SkyTone,
         layerMix: Float,
     ) {
-        val hueAmount = (tone.cyanShift * layerMix).coerceIn(0f, .45f)
-        val saturationAmount = (tone.saturationBoost * layerMix).coerceIn(0f, .50f)
+        val hueAmount = skyHueAmount(tone, layerMix)
+        val saturationAmount = skySaturationAmount(tone, layerMix)
         if ((hueAmount <= 0f && saturationAmount <= 0f) || width <= 0 || height <= 0) return
 
+        val pixel = Rgb()
         for (y in 0 until height) {
             val vertical = region.weightAt(y, height)
             if (vertical <= 0f) continue
             val row = y * width
             for (x in 0 until width) {
                 val index = row + x
-                val color = pixels[index]
-                val red = (color ushr 16 and 0xff) / 255f
-                val green = (color ushr 8 and 0xff) / 255f
-                val blue = (color and 0xff) / 255f
-
-                val weight = skyBlueLikelihood(red, green, blue) * vertical
-                if (weight <= 0f) continue
-                val hueMix = hueAmount * weight
-                val chromaScale = 1f + saturationAmount * weight
-                if (hueMix <= 0f && chromaScale <= 1f) continue
-                val outputLuma = linearLuma(red, green, blue)
-                if (outputLuma <= 0f) continue
-
-                // Raising G and slightly easing B rotates blue toward cyan. Chroma is then
-                // expanded around the old luminance, with a gamut limit instead of clipping.
-                val blueGreenGap = (blue - green).coerceAtLeast(0f)
-                pixels[index] = lumaMatchedChroma(
-                    alpha = color and -0x1000000,
-                    targetR = red,
-                    targetG = green + blueGreenGap * hueMix,
-                    targetB = blue - blueGreenGap * hueMix * .08f,
-                    outputLuma = outputLuma,
-                    chromaScale = chromaScale,
-                )
+                pixel.setFrom(pixels[index])
+                shadeSky(pixel, hueAmount, saturationAmount, vertical)
+                pixels[index] = pixel.pack(pixels[index] and -0x1000000)
             }
         }
+    }
+
+    fun skyHueAmount(tone: SkyTone, layerMix: Float): Float =
+        (tone.cyanShift * layerMix).coerceIn(0f, .45f)
+
+    fun skySaturationAmount(tone: SkyTone, layerMix: Float): Float =
+        (tone.saturationBoost * layerMix).coerceIn(0f, .50f)
+
+    /**
+     * [applySky] for one pixel already in flight.
+     *
+     * The stock's sky colour is rolled off as the pixel approaches paper white, on the same ramp
+     * the print uses for its own highlight tint. Without it this stage had no highlight limit at
+     * all: the brightest pixel inside the sky region took the largest hue rotation and the largest
+     * chroma expansion, which is precisely a cloud, and it left one leaning cyan.
+     */
+    fun shadeSky(pixel: Rgb, hueAmount: Float, saturationAmount: Float, vertical: Float) {
+        val red = pixel.red
+        val green = pixel.green
+        val blue = pixel.blue
+
+        val weight = skyBlueLikelihood(red, green, blue) * vertical *
+            paperWhiteRolloff(luma(red, green, blue))
+        if (weight <= 0f) return
+        val hueMix = hueAmount * weight
+        val chromaScale = 1f + saturationAmount * weight
+        if (hueMix <= 0f && chromaScale <= 1f) return
+        val outputLuma = linearLuma(red, green, blue)
+        if (outputLuma <= 0f) return
+
+        // Raising G and slightly easing B rotates blue toward cyan. Chroma is then
+        // expanded around the old luminance, with a gamut limit instead of clipping.
+        val blueGreenGap = (blue - green).coerceAtLeast(0f)
+        lumaMatchedChroma(
+            pixel = pixel,
+            targetR = red,
+            targetG = green + blueGreenGap * hueMix,
+            targetB = blue - blueGreenGap * hueMix * .08f,
+            outputLuma = outputLuma,
+            chromaScale = chromaScale,
+        )
     }
 
     /**
@@ -126,13 +161,13 @@ internal object SelectiveColor {
      * and the exact linear-light luminance both survive the saturation boost.
      */
     private fun lumaMatchedChroma(
-        alpha: Int,
+        pixel: Rgb,
         targetR: Float,
         targetG: Float,
         targetB: Float,
         outputLuma: Float,
         chromaScale: Float,
-    ): Int {
+    ) {
         val linearR = srgbToLinear(targetR)
         val linearG = srgbToLinear(targetG)
         val linearB = srgbToLinear(targetB)
@@ -146,10 +181,11 @@ internal object SelectiveColor {
             chromaLimit(outputLuma, deltaG),
             chromaLimit(outputLuma, deltaB),
         )
-        return alpha or
-            (ColorMath.toByte(linearToSrgb(outputLuma + deltaR * scale)) shl 16) or
-            (ColorMath.toByte(linearToSrgb(outputLuma + deltaG * scale)) shl 8) or
-            ColorMath.toByte(linearToSrgb(outputLuma + deltaB * scale))
+        pixel.set(
+            linearToSrgb(outputLuma + deltaR * scale),
+            linearToSrgb(outputLuma + deltaG * scale),
+            linearToSrgb(outputLuma + deltaB * scale),
+        )
     }
 
     private fun chromaLimit(luma: Float, delta: Float): Float = when {
@@ -159,22 +195,20 @@ internal object SelectiveColor {
     }
 
     /** HSV-to-RGB into caller-owned [out], avoiding a per-pixel allocation. */
-    private fun hsvToRgb(hue: Float, saturation: Float, value: Float, out: FloatArray) {
+    private fun hsvToRgb(hue: Float, saturation: Float, value: Float, out: Rgb) {
         val h = ((hue % 360f) + 360f) % 360f / 60f
         val chroma = value * saturation.coerceIn(0f, 1f)
         val x = chroma * (1f - abs(h % 2f - 1f))
         val m = value - chroma
         when (h.toInt().coerceIn(0, 5)) {
-            0 -> { out[0] = chroma; out[1] = x; out[2] = 0f }
-            1 -> { out[0] = x; out[1] = chroma; out[2] = 0f }
-            2 -> { out[0] = 0f; out[1] = chroma; out[2] = x }
-            3 -> { out[0] = 0f; out[1] = x; out[2] = chroma }
-            4 -> { out[0] = x; out[1] = 0f; out[2] = chroma }
-            else -> { out[0] = chroma; out[1] = 0f; out[2] = x }
+            0 -> out.set(chroma, x, 0f)
+            1 -> out.set(x, chroma, 0f)
+            2 -> out.set(0f, chroma, x)
+            3 -> out.set(0f, x, chroma)
+            4 -> out.set(x, 0f, chroma)
+            else -> out.set(chroma, 0f, x)
         }
-        out[0] += m
-        out[1] += m
-        out[2] += m
+        out.set(out.red + m, out.green + m, out.blue + m)
     }
 
     /** Soft likelihood for useful vegetation colour (roughly HSV 52-176 degrees). */

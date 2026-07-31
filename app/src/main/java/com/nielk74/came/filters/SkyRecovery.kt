@@ -1,10 +1,9 @@
 package com.nielk74.came.filters
 
-import com.nielk74.came.filters.ColorMath.SRGB_TO_LINEAR
 import com.nielk74.came.filters.ColorMath.linearToSrgb
 import com.nielk74.came.filters.ColorMath.luminanceOfLinear
 import com.nielk74.came.filters.ColorMath.smoothstep
-import com.nielk74.came.filters.ColorMath.toByte
+import com.nielk74.came.filters.ColorMath.srgbToLinear
 
 /**
  * Puts the colour back into a washed-out sky, working on the print.
@@ -42,46 +41,62 @@ internal object SkyRecovery {
         require(width > 0 && height > 0 && pixels.size == width * height)
         if (strength <= 0f) return
 
+        val pixel = Rgb()
         for (y in 0 until height) {
             val vertical = region.weightAt(y, height) * strength
             if (vertical <= 0f) continue
             val offset = y * width
             for (x in 0 until width) {
-                val color = pixels[offset + x]
-                val red = color ushr 16 and 0xff
-                val green = color ushr 8 and 0xff
-                val blue = color and 0xff
-                val depth = vertical * washedSkyWeight(red, green, blue)
-                if (depth <= 0f) continue
-
-                val linearRed = SRGB_TO_LINEAR[red]
-                val linearGreen = SRGB_TO_LINEAR[green]
-                val linearBlue = SRGB_TO_LINEAR[blue]
-                val tone = luminanceOfLinear(linearRed, linearGreen, linearBlue)
-                val exposure = tone * (1f - MAX_DARKENING * depth)
-
-                // Chroma is expanded around the sky's own luminance and then pushed along a
-                // cyan-leaning blue, which is a colour move rather than a channel gain: what little
-                // blue survived the print is amplified instead of being inferred from red alone.
-                val boost = 1f + CHROMA_GAIN * depth
-                val tint = SKY_TINT * depth * tone
-                val deltaRed = (linearRed - tone) * boost + SKY_R * tint
-                val deltaGreen = (linearGreen - tone) * boost + SKY_G * tint
-                val deltaBlue = (linearBlue - tone) * boost + SKY_B * tint
-                // One shared limit instead of three independent clips, so a sky at the edge of the
-                // gamut keeps its hue rather than turning as each channel clips in turn.
-                val scale = minOf(
-                    1f,
-                    headroom(exposure, deltaRed),
-                    headroom(exposure, deltaGreen),
-                    headroom(exposure, deltaBlue),
-                )
-                pixels[offset + x] = color and -0x1000000 or
-                    (toByte(linearToSrgb(exposure + deltaRed * scale)) shl 16) or
-                    (toByte(linearToSrgb(exposure + deltaGreen * scale)) shl 8) or
-                    toByte(linearToSrgb(exposure + deltaBlue * scale))
+                pixel.setFrom(pixels[offset + x])
+                shade(pixel, vertical, region.ambientToneAt(x, y))
+                pixels[offset + x] = pixel.pack(pixels[offset + x] and -0x1000000)
             }
         }
+    }
+
+    /**
+     * [apply] for one pixel already in flight, given its row's [vertical] weight and the brightness
+     * of the sky around it ([ambientTone], from [SkyRegion.ambientToneAt]).
+     */
+    fun shade(pixel: Rgb, vertical: Float, ambientTone: Float) {
+        val encoded = ColorMath.luma(pixel.red, pixel.green, pixel.blue)
+        val depth = vertical * washedSkyWeight(pixel.red, pixel.green, pixel.blue, encoded, ambientTone)
+        if (depth <= 0f) return
+
+        val linearRed = srgbToLinear(pixel.red)
+        val linearGreen = srgbToLinear(pixel.green)
+        val linearBlue = srgbToLinear(pixel.blue)
+        val tone = luminanceOfLinear(linearRed, linearGreen, linearBlue)
+
+        // Deliberately no paper-white rolloff here, though every other stage that adds colour has
+        // one. A sky this stage exists to rescue is itself near the top of the range — a washed-out
+        // one measures around 92% — so rolling the correction off by brightness would take it away
+        // from exactly the pixels it is for. Cloud is held out by what it is, not by how bright it
+        // is: no blue of its own, and standing above the sky around it. Both tests are in
+        // [washedSkyWeight], and by here the pixel has already passed or failed them.
+        val exposure = tone * (1f - MAX_DARKENING * depth)
+
+        // Chroma is expanded around the sky's own luminance and then pushed along a
+        // cyan-leaning blue, which is a colour move rather than a channel gain: what little
+        // blue survived the print is amplified instead of being inferred from red alone.
+        val boost = 1f + CHROMA_GAIN * depth
+        val tint = SKY_TINT * depth * tone
+        val deltaRed = (linearRed - tone) * boost + SKY_R * tint
+        val deltaGreen = (linearGreen - tone) * boost + SKY_G * tint
+        val deltaBlue = (linearBlue - tone) * boost + SKY_B * tint
+        // One shared limit instead of three independent clips, so a sky at the edge of the
+        // gamut keeps its hue rather than turning as each channel clips in turn.
+        val scale = minOf(
+            1f,
+            headroom(exposure, deltaRed),
+            headroom(exposure, deltaGreen),
+            headroom(exposure, deltaBlue),
+        )
+        pixel.set(
+            linearToSrgb(exposure + deltaRed * scale),
+            linearToSrgb(exposure + deltaGreen * scale),
+            linearToSrgb(exposure + deltaBlue * scale),
+        )
     }
 
     /**
@@ -94,26 +109,34 @@ internal object SkyRecovery {
      * pixel rather than per frame, a sky running from deep blue overhead to washed out at the
      * horizon is corrected by what each band of it actually needs.
      *
-     * And it must have kept a trace of blue. That last test is what separates the two white things
-     * in a photograph of the sky. Cloud is lit by the whole sky and comes back neutral to warm; sky
-     * that a computational exposure has run up against the top of the range comes back pale but
-     * still faintly blue, because the blue was diluted rather than clipped away. So the warmth ramp
-     * starts almost exactly at neutral: a cloud, a white wall, or a genuinely clipped patch keeps
-     * its brightness and stays white, while a white-blue sky a few levels off neutral is taken as
-     * sky and gets the full correction.
+     * And it must be sky rather than cloud, which takes two tests because colour alone cannot do
+     * it. Cloud is lit by the whole sky and comes back carrying much the same faint blue the sky
+     * does — only less of it — so the blue-over-red ramp is placed where the two actually separate
+     * rather than just above neutral, where it scored both at full. What that still cannot settle,
+     * structure does: cloud stands above the brightness of the sky around it, and clear sky does
+     * not. A white wall or a genuinely blown patch fails both and keeps its white.
      *
      * Once a pixel has enough chroma for its hue to mean anything, that hue is required to be the
      * sky's — blue leading green leading red — which keeps pale lilac, magenta, and cyan-green
      * surfaces out. Below that the hue is noise and only the brightness and warmth tests apply.
      */
-    private fun washedSkyWeight(red: Int, green: Int, blue: Int): Float {
-        val r = red / 255f
-        val g = green / 255f
-        val b = blue / 255f
-        val brightness = smoothstep(PIXEL_DIM, PIXEL_BRIGHT, ColorMath.luma(r, g, b))
+    private fun washedSkyWeight(
+        r: Float,
+        g: Float,
+        b: Float,
+        encoded: Float,
+        ambientTone: Float,
+    ): Float {
+        val brightness = smoothstep(PIXEL_DIM, PIXEL_BRIGHT, encoded)
         if (brightness <= 0f) return 0f
         val cool = smoothstep(CLOUD_NEUTRAL, SKY_BLUE_BIAS, b - r)
         if (cool <= 0f) return 0f
+
+        // Cloud stands above the sky around it; clear sky sits at or below that average. This is
+        // the test that actually separates the two, because their colour does not — a cloud is lit
+        // by the sky and comes back carrying the same faint blue.
+        val cloud = smoothstep(CLOUD_ABOVE_SKY_RISE, CLOUD_ABOVE_SKY_FULL, encoded - ambientTone)
+        if (cloud >= 1f) return 0f
 
         val maximum = maxOf(r, g, b)
         val chroma = if (maximum <= 0f) 0f else (maximum - minOf(r, g, b)) / maximum
@@ -122,19 +145,34 @@ internal object SkyRecovery {
 
         val hue = smoothstep(-.020f, .010f, b - g) * smoothstep(-.020f, .010f, g - r)
         val hueMatters = smoothstep(NEUTRAL_CHROMA, HUED_CHROMA, chroma)
-        return brightness * cool * washedOut * (1f - hueMatters * (1f - hue))
+        return brightness * cool * washedOut * (1f - cloud) * (1f - hueMatters * (1f - hue))
     }
 
     private const val PIXEL_DIM = .42f
     private const val PIXEL_BRIGHT = .68f
 
     /**
-     * Cloud and sky part company within a few levels of neutral, so this ramp is short and sits just
-     * above zero: no blue at all is cloud or paper and keeps its white, a couple of levels of blue
-     * is sky and is corrected in full.
+     * How much blue over red marks a pixel as sky rather than as something white.
+     *
+     * The ramp is short and sits just above neutral because that is the regime this stage exists
+     * for: a sky a computational exposure has run up against the top of its range arrives with
+     * about ten levels of blue in it, and a cloud beside it with none. Widening it to where the two
+     * separate on a frame whose sky is already deep — around thirty levels against eighty-five —
+     * measures better on that frame and stops the washed-out sky from being recovered at all, which
+     * is the whole point of the stage. So this test keeps the case it was built for, and the
+     * ambient-brightness test above takes the cloud that has picked up the sky's own blue.
      */
     private const val CLOUD_NEUTRAL = .002f
     private const val SKY_BLUE_BIAS = .018f
+
+    /**
+     * How far above the surrounding sky a pixel has to sit before it is read as cloud rather than
+     * as a bright patch of sky, as a fraction of the encoded range. Measured on real frames, clear
+     * sky sits within a couple of percent of its own neighbourhood average while cloud runs eight
+     * to thirty above it, so the ramp starts just outside the sky's own variation.
+     */
+    private const val CLOUD_ABOVE_SKY_RISE = .03f
+    private const val CLOUD_ABOVE_SKY_FULL = .14f
 
     private const val RICH_SKY_CHROMA = .16f
     private const val SATURATED_SKY_CHROMA = .40f

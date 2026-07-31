@@ -1,7 +1,6 @@
 package com.nielk74.came.filters
 
 import com.nielk74.came.filters.ColorMath.smoothstep
-import com.nielk74.came.filters.ColorMath.toByte
 
 /**
  * The colour a print carries by tone: blue through the low-mids, warmth above them, white at the top.
@@ -22,35 +21,43 @@ import com.nielk74.came.filters.ColorMath.toByte
  */
 internal object ToneTint {
     fun apply(pixels: IntArray) {
+        val pixel = Rgb()
         for (index in pixels.indices) {
-            val color = pixels[index]
-            val red = color ushr 16 and 0xff
-            val green = color ushr 8 and 0xff
-            val blue = color and 0xff
-
-            val tone = lumaByte(red, green, blue)
-            val cool = COOL_WEIGHT[tone]
-            val warm = WARM_WEIGHT[tone]
-            if (cool <= 0f && warm <= 0f) continue
-
-            pixels[index] = color and -0x1000000 or
-                (toByte(red / 255f + COOL_R * cool + WARM_R * warm) shl 16) or
-                (toByte(green / 255f + COOL_G * cool + WARM_G * warm) shl 8) or
-                toByte(blue / 255f + COOL_B * cool + WARM_B * warm)
+            pixel.setFrom(pixels[index])
+            shade(pixel)
+            pixels[index] = pixel.pack(pixels[index] and -0x1000000)
         }
+    }
+
+    /** [apply] for one pixel already in flight, so the pointwise chain need not round-trip it. */
+    fun shade(pixel: Rgb) {
+        val tone = ((ColorMath.luma(pixel.red, pixel.green, pixel.blue))
+            .coerceIn(0f, 1f) * 255f + .5f).toInt()
+        val cool = COOL_WEIGHT[tone]
+        val warm = WARM_WEIGHT[tone]
+        if (cool <= 0f && warm <= 0f) return
+        pixel.set(
+            pixel.red + COOL_R * cool + WARM_R * warm,
+            pixel.green + COOL_G * cool + WARM_G * warm,
+            pixel.blue + COOL_B * cool + WARM_B * warm,
+        )
     }
 
     /** Rises over [rise], holds between [full] and [hold], and is gone by [fall]. */
     private fun lobe(tone: Float, rise: Float, full: Float, hold: Float, fall: Float): Float =
         smoothstep(rise, full, tone) * (1f - smoothstep(hold, fall, tone))
 
-    private fun lumaByte(red: Int, green: Int, blue: Int): Int =
-        ((54 * red + 183 * green + 19 * blue + 128) shr 8).coerceIn(0, 255)
-
-    /** Blue, placed low enough to colour the shadow side without reaching the subject. */
+    /**
+     * Blue, placed low enough to colour the shadow side without reaching the subject.
+     *
+     * It starts well above black rather than just above it. At .06 the lobe was already opening by
+     * code 15, so the deepest tones in the picture — the ones with the least to spare — took the
+     * full print base on top of the stock's own blue shadow tint, and read cold rather than cool.
+     * The amount is unchanged; only its floor moved, so the low-mids keep exactly the blue they had.
+     */
     private const val COOL_AMOUNT = .030f
-    private const val COOL_RISE = .06f
-    private const val COOL_FULL = .26f
+    private const val COOL_RISE = .14f
+    private const val COOL_FULL = .30f
     private const val COOL_HOLD = .44f
     private const val COOL_FALL = .60f
 

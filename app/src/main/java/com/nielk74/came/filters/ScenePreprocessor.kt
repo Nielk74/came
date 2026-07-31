@@ -1,5 +1,6 @@
 package com.nielk74.came.filters
 
+import com.nielk74.came.filters.ColorMath.smoothstep
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.ln
@@ -45,8 +46,12 @@ internal object ScenePreprocessor {
                 val localBase = blurredLuminance[
                     localRow + min(x / localLuminance.blockSize, localLuminance.width - 1)
                 ]
-                val toneGate = (4f * globalLuminance * (1f - globalLuminance))
-                    .coerceIn(0f, 1f)
+                // Open through the shadows and closing only toward paper white. This used to be
+                // 4L(1-L), a parabola that fell to nothing at both ends — so the one stage that
+                // could put separation back into the darkest tones was gated almost off exactly
+                // there, and a shadow arrived flat because nothing had been allowed to work on it.
+                val toneGate = smoothstep(0f, SHADOW_GATE_OPEN, globalLuminance) *
+                    ColorMath.paperWhiteRolloff(globalLuminance)
                 val detail = (
                     sample(LOG_LUMINANCE, globalLuminance) -
                         sample(LOG_LUMINANCE, localBase)
@@ -108,8 +113,13 @@ internal object ScenePreprocessor {
             .coerceAtLeast(blackPoint + MIN_RANGE)
         val normalizedMidtone = normalize(midtone, blackPoint, whitePoint)
         val midtoneTarget = normalizedMidtone.coerceIn(MIN_MIDPOINT, MAX_MIDPOINT)
+        // A frame with no range to speak of — a night sky, a dark wall, a covered lens — has no
+        // shadows to open, only a level. Reading its midtone as an under-exposure and lifting it
+        // toward the middle would turn every one of them into flat grey, so the deep end of the
+        // range is only offered to a scene that actually has one.
+        val gammaFloor = if (hasSceneRange) MIN_GAMMA else MIN_GAMMA_WITHOUT_RANGE
         val gamma = if (normalizedMidtone in .001f..<.999f) {
-            (ln(midtoneTarget) / ln(normalizedMidtone)).coerceIn(MIN_GAMMA, MAX_GAMMA)
+            (ln(midtoneTarget) / ln(normalizedMidtone)).coerceIn(gammaFloor, MAX_GAMMA)
         } else {
             1f
         }
@@ -117,11 +127,21 @@ internal object ScenePreprocessor {
         val contrast = (
             MAX_CONTRAST - normalizedRange * (MAX_CONTRAST - MIN_CONTRAST)
         ).coerceIn(MIN_CONTRAST, MAX_CONTRAST)
+        // How much of the frame is actually in the shadows, which the midtone cannot say. A street
+        // under a bright sky meters a perfectly normal midtone and still puts a fifth of its pixels
+        // near black; [gamma] is driven by the midtone and leaves exactly that frame alone.
+        val shadowShare = shareBelow(histogram, samples, SHADOW_TONE)
+        val shadowLift = if (hasSceneRange) {
+            MAX_SHADOW_LIFT * smoothstep(SHADOW_SHARE_RISE, SHADOW_SHARE_FULL, shadowShare)
+        } else {
+            0f
+        }
         return SceneAnalysis(
             blackPoint = blackPoint,
             whitePoint = whitePoint,
             gamma = gamma,
             contrast = contrast,
+            shadowLift = shadowLift,
             sourceLow = low,
             sourceMidtone = midtone,
             sourceHigh = high,
@@ -134,7 +154,13 @@ internal object ScenePreprocessor {
         val exposed = normalized.toDouble().pow(analysis.gamma.toDouble()).toFloat()
         val sCurve = exposed + analysis.contrast * (exposed - .5f) *
             4f * exposed * (1f - exposed)
-        return sCurve.coerceIn(0f, 1f)
+        // The toe. Zero at both ends, so black stays black and white stays white, but it steepens
+        // the bottom of the curve by (1 + shadowLift) — two shadow tones a level apart leave it
+        // further apart than they arrived, which is what shadow detail actually is. The S-curve
+        // above can only take contrast out of the shadows; this is the shape that puts it back.
+        val above = 1f - sCurve
+        val toe = analysis.shadowLift * sCurve * above * above * above * above * above * above * above
+        return (sCurve + toe).coerceIn(0f, 1f)
     }
 
     private fun createLocalLuminance(
@@ -204,6 +230,15 @@ internal object ScenePreprocessor {
             }
         }
         return output
+    }
+
+    /** The share of the frame darker than [tone], as a fraction of the encoded range. */
+    private fun shareBelow(histogram: IntArray, sampleCount: Int, tone: Float): Float {
+        if (sampleCount <= 0) return 0f
+        val last = (tone * 255f).toInt().coerceIn(0, histogram.lastIndex)
+        var counted = 0
+        for (index in 0..last) counted += histogram[index]
+        return counted.toFloat() / sampleCount
     }
 
     private fun percentile(histogram: IntArray, sampleCount: Int, fraction: Float): Int {
@@ -277,8 +312,23 @@ internal object ScenePreprocessor {
     private const val MIN_SCENE_RANGE_FOR_LEVELS = .12f
     private const val MIN_MIDPOINT = .42f
     private const val MAX_MIDPOINT = .58f
-    private const val MIN_GAMMA = .88f
+    /**
+     * The floor was .88, which is well inside the range real scenes ask for: a backlit street
+     * computes about .63 here and was handed .88, so the metering worked out the lift the frame
+     * needed and then threw most of it away. Nothing asks to be darkened, so the ceiling stays.
+     */
+    private const val MIN_GAMMA = .60f
+    private const val MIN_GAMMA_WITHOUT_RANGE = .88f
     private const val MAX_GAMMA = 1.12f
+
+    /** Below this the frame counts as shadow for the purpose of deciding how much toe to add. */
+    private const val SHADOW_TONE = .16f
+    private const val SHADOW_SHARE_RISE = .04f
+    private const val SHADOW_SHARE_FULL = .20f
+    private const val MAX_SHADOW_LIFT = .80f
+
+    /** Where the local-contrast gate has finished opening above black. */
+    private const val SHADOW_GATE_OPEN = .04f
     /**
      * The develop stage sets a stable exposure; the stock supplies the look.
      *
@@ -305,6 +355,7 @@ internal data class SceneAnalysis(
     val whitePoint: Float,
     val gamma: Float,
     val contrast: Float,
+    val shadowLift: Float,
     val sourceLow: Float,
     val sourceMidtone: Float,
     val sourceHigh: Float,

@@ -1,6 +1,7 @@
 package com.nielk74.came.filters
 
 import com.nielk74.came.filters.ColorMath.smoothstep
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -20,7 +21,13 @@ import kotlin.math.sqrt
  * safe direction here: reaching too far down risks a slight darkening of something sky-coloured,
  * while stopping too short is the artefact that shows.
  */
-internal class SkyRegion private constructor(private val bottom: Float) {
+internal class SkyRegion private constructor(
+    private val bottom: Float,
+    private val ambient: FloatArray? = null,
+    private val columns: Int = 0,
+    private val rows: Int = 0,
+    private val blockSize: Int = 0,
+) {
     /**
      * How much of row [y] may be treated as sky, 1 down to the detected skyline and easing to 0
      * across [EXTENT_FADE] of the frame below it. The fade spans a large enough band that it reads
@@ -29,6 +36,40 @@ internal class SkyRegion private constructor(private val bottom: Float) {
     fun weightAt(y: Int, height: Int): Float {
         if (height <= 0) return 0f
         return 1f - smoothstep(bottom, bottom + EXTENT_FADE, (y + .5f) / height)
+    }
+
+    /**
+     * How bright the sky is *around* the pixel at ([x], [y]), at block resolution and heavily
+     * blurred.
+     *
+     * This is what tells cloud from sky. Colour cannot: a cloud arrives carrying the same faint
+     * blue the sky around it does — it is lit by that sky — so a rule reading a single pixel's own
+     * blue calls both of them sky and gives the cloud the full correction. Structure can: cloud is
+     * the bright minority inside a region whose bulk is sky, so it stands above this average while
+     * clear sky sits at or below it. The blur is deliberately wide, so a large cloud is measured
+     * against the sky beyond it rather than against itself.
+     *
+     * Returns [Float.MAX_VALUE] when there is no block grid, which leaves every pixel reading as
+     * sky — the behaviour callers had before this existed.
+     */
+    fun ambientToneAt(x: Int, y: Int): Float {
+        val grid = ambient ?: return Float.MAX_VALUE
+        // Sampled between block centres rather than per block. Reading the grid directly would put
+        // a step into the correction at every block boundary, which is the one artefact this whole
+        // region is shaped to avoid — the cost of a mask is the edge it leaves, not its coarseness.
+        val fx = (x - blockSize * .5f) / blockSize
+        val fy = (y - blockSize * .5f) / blockSize
+        val x0 = floor(fx).toInt()
+        val y0 = floor(fy).toInt()
+        val tx = fx - x0
+        val ty = fy - y0
+        val left = x0.coerceIn(0, columns - 1)
+        val right = (x0 + 1).coerceIn(0, columns - 1)
+        val top = y0.coerceIn(0, rows - 1) * columns
+        val bottom = (y0 + 1).coerceIn(0, rows - 1) * columns
+        val upper = grid[top + left] + (grid[top + right] - grid[top + left]) * tx
+        val lower = grid[bottom + left] + (grid[bottom + right] - grid[bottom + left]) * tx
+        return upper + (lower - upper) * ty
     }
 
     companion object {
@@ -62,7 +103,68 @@ internal class SkyRegion private constructor(private val bottom: Float) {
             val skyline = max(reached, colourSkyline(colour, columns, rows))
             val bottom = ((skyline + 1).toFloat() * blockSize / height + EXTENT_SLACK)
                 .coerceIn(0f, 1f)
-            return SkyRegion(bottom)
+            val radiusX = (columns / AMBIENT_WIDE_DIVISOR).coerceAtLeast(MIN_AMBIENT_RADIUS)
+            val radiusY = (rows / AMBIENT_TALL_DIVISOR).coerceAtLeast(MIN_AMBIENT_RADIUS)
+            // Averaged over sky blocks only. A plain average would let a branch, a wire, or a
+            // roofline pull the local level down and make the ordinary sky beside it stand above
+            // its own surroundings — which is the definition of cloud used below, and would have
+            // drawn a halo around every dark object in the sky.
+            val lit = boxBlur(FloatArray(colour.size) { blocks.brightness[it] * colour[it] },
+                columns, rows, radiusX, radiusY)
+            val share = boxBlur(colour.copyOf(), columns, rows, radiusX, radiusY)
+            val ambient = FloatArray(colour.size) { index ->
+                if (share[index] > AMBIENT_MIN_SHARE) {
+                    lit[index] / share[index]
+                } else {
+                    // Nothing sky-like nearby to compare against, so a pixel matches its own block
+                    // and reads as sky rather than as cloud.
+                    blocks.brightness[index]
+                }
+            }
+            return SkyRegion(bottom, ambient, columns, rows, blockSize)
+        }
+
+        /**
+         * Separable box blur of a block-resolution plane, clamping at the edges.
+         *
+         * The two radii are deliberately different. A sky's own brightness runs vertically — deep
+         * overhead, pale at the horizon — so averaging a tall window would compare a hazy band just
+         * above the skyline against the darker sky well above it and call the whole band cloud,
+         * which is exactly the region this stage exists to recover. Averaging a wide, short window
+         * instead puts each pixel against the sky at its own height, where a haze band sits at the
+         * average and a cloud, which is local in both directions, stands above it.
+         */
+        private fun boxBlur(
+            input: FloatArray,
+            width: Int,
+            height: Int,
+            radiusX: Int,
+            radiusY: Int,
+        ): FloatArray {
+            val horizontal = FloatArray(input.size)
+            val normX = 1f / (2 * radiusX + 1)
+            for (y in 0 until height) {
+                val row = y * width
+                var sum = 0f
+                for (k in -radiusX..radiusX) sum += input[row + k.coerceIn(0, width - 1)]
+                for (x in 0 until width) {
+                    horizontal[row + x] = sum * normX
+                    sum += input[row + (x + radiusX + 1).coerceIn(0, width - 1)] -
+                        input[row + (x - radiusX).coerceIn(0, width - 1)]
+                }
+            }
+            val output = FloatArray(input.size)
+            val normY = 1f / (2 * radiusY + 1)
+            for (x in 0 until width) {
+                var sum = 0f
+                for (k in -radiusY..radiusY) sum += horizontal[k.coerceIn(0, height - 1) * width + x]
+                for (y in 0 until height) {
+                    output[y * width + x] = sum * normY
+                    sum += horizontal[(y + radiusY + 1).coerceIn(0, height - 1) * width + x] -
+                        horizontal[(y - radiusY).coerceIn(0, height - 1) * width + x]
+                }
+            }
+            return output
         }
 
         /** Per-block brightness, coolness, chroma, and roughness, from one full-resolution pass. */
@@ -247,5 +349,17 @@ internal class SkyRegion private constructor(private val bottom: Float) {
         /** Frame fractions: how far past the skyline the region holds, and how long it then fades. */
         private const val EXTENT_SLACK = .08f
         private const val EXTENT_FADE = .22f
+
+        /**
+         * The ambient window: about two thirds of the frame across and an eighth of it down.
+         * Narrower across and a large cloud starts being measured against its own brightness and
+         * stops reading as cloud; taller down and the sky's own vertical gradient reads as one.
+         */
+        private const val AMBIENT_WIDE_DIVISOR = 3
+        private const val AMBIENT_TALL_DIVISOR = 16
+        private const val MIN_AMBIENT_RADIUS = 1
+
+        /** Below this much sky in the window there is nothing meaningful to average. */
+        private const val AMBIENT_MIN_SHARE = .05f
     }
 }

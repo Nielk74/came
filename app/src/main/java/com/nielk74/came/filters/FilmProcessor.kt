@@ -69,28 +69,20 @@ object FilmProcessor {
         // Where the sky is, measured on the developed scene and held for the sky stage below. The
         // print changes the colours of the frame but not its geometry, so this stays true across it.
         val sky = SkyRegion.detect(pixels, width, height)
+        // Each of the two passes below runs several pointwise stages against one pixel before
+        // writing it back. They used to be a pass each, handing the next one a packed byte, and the
+        // roundings that cost stacked up exactly where the frame could least afford them — the sky
+        // stage darkens and the print compresses, and below code 32 there are only 32 levels for
+        // the whole shadow range to spend. Grouping them costs no memory and pays one rounding
+        // instead of five, while still reporting the two stages a photographer is shown.
         onStage(RenderStage.PRINT)
-        applyPointwise(pixels, profile)
-        // Selective foliage colour is part of the stock's colour response, not a texture layer, so
-        // it runs at both qualities and the preview keeps matching the capture.
-        if (profile.foliageTone.enabled) {
-            SelectiveColor.applyFoliage(pixels, profile.foliageTone, profile.strength)
-        }
+        applyPrint(pixels, profile)
         // The sky is finished on the print rather than before it. Recovering it first and letting
         // the stock read the result sounds right and measures wrong: the negative and print curves
         // are built to compress a bright, low-chroma region, so they take most of the recovered blue
         // straight back out and the sky returns to the grey it started as.
         onStage(RenderStage.SKY)
-        if (sky != null) SkyRecovery.apply(pixels, width, height, sky)
-        if (profile.skyTone.enabled) {
-            // A frame whose sky the detector was unsure of must not lose the stock's sky colour
-            // altogether — that is how a sky ends up rendering flat grey. The hue window is tight
-            // enough to stand on its own; the region only narrows where it is known.
-            val region = sky ?: SkyRegion.WholeFrame
-            SelectiveColor.applySky(pixels, width, height, region, profile.skyTone, profile.strength)
-        }
-        // The base every stock is printed on: cool low-mids, warm mids, white highlights.
-        ToneTint.apply(pixels)
+        applySkyAndBase(pixels, width, height, profile, sky)
         if (quality == RenderQuality.CAPTURE) {
             if (profile.halation.enabled) {
                 onStage(RenderStage.HALATION)
@@ -103,17 +95,27 @@ object FilmProcessor {
         }
     }
 
-    private fun applyPointwise(pixels: IntArray, profile: FilmProfile) {
+    /**
+     * The stock's own response, and the selective foliage colour that belongs to it.
+     *
+     * Foliage runs at both qualities so the preview keeps matching the capture — it is part of how
+     * the emulsion reads green, not a texture layer.
+     */
+    private fun applyPrint(pixels: IntArray, profile: FilmProfile) {
         val tables = Tables(profile)
         val matrix = profile.crossTalk
         val mono = profile.monochromeWeights
         val split = profile.splitTone
         val shadowTintLuma = luma(split.shadowR, split.shadowG, split.shadowB)
         val highlightTintLuma = luma(split.highlightR, split.highlightG, split.highlightB)
+        val foliageHue = SelectiveColor.foliageHueAmount(profile.foliageTone, profile.strength)
+        val foliageSaturation =
+            SelectiveColor.foliageSaturationAmount(profile.foliageTone, profile.strength)
+        val foliage = profile.foliageTone.enabled && (foliageHue > 0f || foliageSaturation > 0f)
 
+        val pixel = Rgb()
         for (index in pixels.indices) {
             val color = pixels[index]
-            val alpha = color ushr 24
             val sourceR = (color ushr 16) and 0xff
             val sourceG = (color ushr 8) and 0xff
             val sourceB = color and 0xff
@@ -133,16 +135,20 @@ object FilmProcessor {
                 blueDensity = negativeDensity(exposure, profile.blue)
             }
 
-            val mixedR = (matrix.m00 * redDensity + matrix.m01 * greenDensity +
-                matrix.m02 * blueDensity).coerceIn(0f, 1f)
-            val mixedG = (matrix.m10 * redDensity + matrix.m11 * greenDensity +
-                matrix.m12 * blueDensity).coerceIn(0f, 1f)
-            val mixedB = (matrix.m20 * redDensity + matrix.m21 * greenDensity +
-                matrix.m22 * blueDensity).coerceIn(0f, 1f)
+            // Cross-talk is bleed between dye layers, so the three results leave the matrix as one
+            // colour. Clipping them one at a time turned a density at the edge of the range as each
+            // channel hit the limit in turn; scaling all three about their shared neutral keeps the
+            // mix in range with its hue intact, the way the sky and chroma stages already do.
+            gamutSafeDensities(
+                pixel,
+                matrix.m00 * redDensity + matrix.m01 * greenDensity + matrix.m02 * blueDensity,
+                matrix.m10 * redDensity + matrix.m11 * greenDensity + matrix.m12 * blueDensity,
+                matrix.m20 * redDensity + matrix.m21 * greenDensity + matrix.m22 * blueDensity,
+            )
 
-            var renderedR = tables.positive(mixedR)
-            var renderedG = tables.positive(mixedG)
-            var renderedB = tables.positive(mixedB)
+            var renderedR = tables.positive(pixel.red)
+            var renderedG = tables.positive(pixel.green)
+            var renderedB = tables.positive(pixel.blue)
             val renderedLuma = luma(renderedR, renderedG, renderedB)
             renderedR = renderedLuma + (renderedR - renderedLuma) * profile.saturation
             renderedG = renderedLuma + (renderedG - renderedLuma) * profile.saturation
@@ -160,8 +166,7 @@ object FilmProcessor {
                 // Paper white is white. The stock's highlight tint reaches its authored strength
                 // through the upper mids and is then rolled back off, so a cloud, a shirt in sun,
                 // and a blown window keep the neutral they arrived with instead of turning warm.
-                val highlightWeight = tone * tone * split.amount *
-                    (1f - ColorMath.smoothstep(PAPER_APPROACH, PAPER_WHITE, tone))
+                val highlightWeight = tone * tone * split.amount * ColorMath.paperWhiteRolloff(tone)
                 val shadowWeight = (1f - tone) * (1f - tone) * split.amount
                 renderedR += (split.shadowR - shadowTintLuma) * shadowWeight +
                     (split.highlightR - highlightTintLuma) * highlightWeight
@@ -171,11 +176,72 @@ object FilmProcessor {
                     (split.highlightB - highlightTintLuma) * highlightWeight
             }
 
-            pixels[index] = alpha shl 24 or
-                (toByte(renderedR) shl 16) or
-                (toByte(renderedG) shl 8) or
-                toByte(renderedB)
+            pixel.set(renderedR, renderedG, renderedB)
+            pixel.clamp01()
+            if (foliage) SelectiveColor.shadeFoliage(pixel, foliageHue, foliageSaturation)
+            pixels[index] = pixel.pack(color and -0x1000000)
         }
+    }
+
+    /**
+     * The sky's brightness and colour, the stock's sky hue, and the print base every stock shares.
+     *
+     * All three read the pixel the previous one produced, so they are one pass over the frame.
+     */
+    private fun applySkyAndBase(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        profile: FilmProfile,
+        sky: SkyRegion?,
+    ) {
+        // A frame whose sky the detector was unsure of must not lose the stock's sky colour
+        // altogether — that is how a sky ends up rendering flat grey. The hue window is tight
+        // enough to stand on its own; the region only narrows where it is known.
+        val region = sky ?: SkyRegion.WholeFrame
+        val hueAmount = SelectiveColor.skyHueAmount(profile.skyTone, profile.strength)
+        val saturationAmount =
+            SelectiveColor.skySaturationAmount(profile.skyTone, profile.strength)
+        val skyTone = profile.skyTone.enabled && (hueAmount > 0f || saturationAmount > 0f)
+
+        val pixel = Rgb()
+        for (y in 0 until height) {
+            val recovery = sky?.weightAt(y, height) ?: 0f
+            val tone = if (skyTone) region.weightAt(y, height) else 0f
+            val offset = y * width
+            for (x in 0 until width) {
+                val color = pixels[offset + x]
+                pixel.setFrom(color)
+                if (sky != null && recovery > 0f) {
+                    SkyRecovery.shade(pixel, recovery, sky.ambientToneAt(x, y))
+                }
+                if (tone > 0f) SelectiveColor.shadeSky(pixel, hueAmount, saturationAmount, tone)
+                // The base every stock is printed on: cool low-mids, warm mids, white highlights.
+                ToneTint.shade(pixel)
+                pixels[offset + x] = pixel.pack(color and -0x1000000)
+            }
+        }
+    }
+
+    /**
+     * Puts the cross-talk mix into [out], scaling all three about their shared neutral axis by one
+     * factor rather than clipping each independently.
+     */
+    private fun gamutSafeDensities(out: Rgb, red: Float, green: Float, blue: Float) {
+        val axis = ((red + green + blue) / 3f).coerceIn(0f, 1f)
+        var scale = 1f
+        fun constrain(delta: Float) {
+            if (delta > 0f) scale = minOf(scale, (1f - axis) / delta)
+            if (delta < 0f) scale = minOf(scale, axis / -delta)
+        }
+        constrain(red - axis)
+        constrain(green - axis)
+        constrain(blue - axis)
+        out.set(
+            axis + (red - axis) * scale,
+            axis + (green - axis) * scale,
+            axis + (blue - axis) * scale,
+        )
     }
 
     /**
@@ -412,15 +478,9 @@ object FilmProcessor {
     private fun luma(red: Float, green: Float, blue: Float): Float =
         ColorMath.luma(red, green, blue)
 
-    private fun toByte(value: Float): Int = (value.coerceIn(0f, 1f) * 255f).roundToInt()
-
     private fun linearToSrgb(value: Float): Float = ColorMath.linearToSrgb(value)
 
     private val SRGB_TO_LINEAR = ColorMath.SRGB_TO_LINEAR
-
-    /** Where the stock's highlight tint starts easing off, and where it is gone. */
-    private const val PAPER_APPROACH = .74f
-    private const val PAPER_WHITE = .95f
 
     private const val EPSILON = .000001f
     private const val TABLE_SIZE = 4096

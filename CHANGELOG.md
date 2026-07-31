@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+## 0.18.0 - 2026-08-01
+
+- Keep cloud white. Cloud was being read as sky and given the full recovery — darkened, its chroma
+  expanded, and a cyan tint added on top — because the test separating the two asked whether a pixel
+  carried any blue at all, and saturated once blue led red by five levels in 255. Cloud is lit by
+  the sky and comes back carrying about thirty. Measured on real frames, every cloud in them scored
+  a perfect one on a test written to exclude it. What actually tells them apart is structure: cloud
+  stands above the brightness of the sky around it and clear sky does not, so that is now the
+  question asked. The sky keeps its colour and gains a little; the cloud inside it comes back white.
+- Compare each pixel against the sky at its own height, averaged wide and shallow rather than in a
+  circle, and over sky blocks only. A sky's brightness runs vertically, so a tall average would have
+  called the hazy band above the skyline cloud — the very region the recovery exists for — and an
+  unweighted one would have let a branch or a roofline pull the local level down and draw a halo of
+  false cloud around every dark object in the frame.
+- Open the shadows the metering already knew were closed. The develop stage worked out the lift a
+  backlit scene needed and then clamped most of it away, and its one tool for putting separation
+  back into the darkest tones was gated almost off exactly there — the gate was a parabola that fell
+  to nothing at both ends. A frame can also meter a perfectly normal midtone while a fifth of it
+  sits near black, which no midtone-driven correction can see, so the curve now carries a toe
+  weighted by how much of the frame is actually in shadow. Measured across both, detail in the
+  darkest twentieth of the picture is up by a quarter to a half.
+- Stop the print base tinting the deepest tones. The cool lobe opened at code 15, so the tones with
+  the least to spare took it on top of each stock's own blue shadow, and read cold rather than cool.
+  Its amount is unchanged and the low-mids keep exactly the blue they had.
+- Amplify each stock's print curve across a band rather than at a line. The gain stepped from 1.25
+  to 2.6 at a threshold derived from an unrelated parameter, so Portra 400 landing .005 below it and
+  Portra 800 .030 above it were rendered 2.08 times apart on authored numbers .02 apart — Portra 800
+  authored a *lower* shoulder than Portra 400 and rendered one 53% higher. The shoulder also
+  saturated high enough to double an authored value, which is what left a sunlit cloud at luminance
+  190 with barely a percent of the picture above 200. Every stock now lands within a narrow band.
+- Carry a pixel through the print and the sky in floating point instead of handing each stage a
+  packed byte. Five stages in a row cost five roundings, and they landed where the frame could least
+  afford them: below code 32 the whole shadow range has 32 levels to spend, and a stage that darkens
+  or compresses spends some permanently. Grouping the pointwise stages into two passes costs no
+  memory and pays one rounding instead of five. Cross-talk output is also scaled about its shared
+  neutral now rather than clipped a channel at a time, which was turning a colour at the edge of the
+  range as each channel hit the limit in turn.
+
 ## 0.17.0 - 2026-07-30
 
 - Make the electronic level understand all four physical phone poses and rotate the complete

@@ -223,7 +223,19 @@ object FilmCatalog {
         // reading as a *weaker* look, not a stronger one — washed out is the very complaint this
         // tuning exists to fix. Added contrast is amplified fully; a reduction stays near what the
         // stock authored and lets its character come from colour instead.
-        val gain = if (print.contrast >= neutral) TONE_CHARACTER else FLATNESS_CHARACTER
+        // A contrasty print is amplified harder than a flat one, but across a band rather than at a
+        // line. This used to be `if (print.contrast >= neutral)`, and because `neutral` is derived
+        // from the green channel's contrast, which stock landed on which side had almost nothing to
+        // do with how far apart the two were authored: Portra 400 sits .005 below the boundary and
+        // Portra 800 .030 above it, so a difference of .02 in the authored numbers bought a gain
+        // 2.08 times larger. Portra 800 authors a *lower* shoulder than Portra 400 and rendered one
+        // 53% higher, which is most of why the two stocks diverged as far as they did.
+        val character = ColorMath.smoothstep(
+            neutral - CHARACTER_BLEND,
+            neutral + CHARACTER_BLEND,
+            print.contrast,
+        )
+        val gain = FLATNESS_CHARACTER + (TONE_CHARACTER - FLATNESS_CHARACTER) * character
         return print.copy(
             contrast = neutral + soften(print.contrast - neutral, gain, CONTRAST_HEADROOM),
             toe = soften(print.toe, gain, TOE_HEADROOM),
@@ -288,6 +300,13 @@ object FilmCatalog {
     private const val COLOUR_CHARACTER = 2.4f
 
     /**
+     * How far either side of a stock's own neutral the two characters are blended across. Wide
+     * enough that the catalogue's prints, which are authored within a few hundredths of each other,
+     * land on a ramp rather than either side of a step.
+     */
+    private const val CHARACTER_BLEND = .06f
+
+    /**
      * Cross-talk is channel bleed, so amplifying it desaturates on its own. It gets a gentler gain
      * than [COLOUR_CHARACTER] to keep the two from compounding into a grey, near-monochrome render
      * on the stocks that authored the most bleed.
@@ -301,7 +320,18 @@ object FilmCatalog {
      */
     private const val CONTRAST_HEADROOM = .30f
     private const val TOE_HEADROOM = .42f
-    private const val SHOULDER_HEADROOM = .95f
+
+    /**
+     * The shoulder saturates far lower than it did.
+     *
+     * At .95 the amplifier was free to roughly double an authored shoulder, and the print's
+     * shoulder term is subtracted as `shoulder * density²` — so it bites hardest exactly at the top
+     * of the range. Measured on real frames, a stock that reached .76 here put a sunlit cloud out
+     * at luminance 190 and left barely one percent of the picture above 200, which is a sky with no
+     * white in it. Held here, the amplifier still separates a contrasty print from a flat one while
+     * the highlights keep somewhere to go.
+     */
+    private const val SHOULDER_HEADROOM = .55f
     private const val SATURATION_HEADROOM = .26f
 
     /**
